@@ -138,8 +138,8 @@ export class Cockpit {
     this.hud = c; this.hudG = c.getContext('2d');
     this.hudTex = new THREE.CanvasTexture(c); this.hudTex.colorSpace = THREE.SRGBColorSpace;
     // bandeau plat posé au pied du pare-brise, entièrement au-dessus de la jante du volant (≈ 1 à 5° sous l'horizon)
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.125), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, toneMapped: false, depthWrite: false, depthTest: false }));
-    m.position.set(EYE.x, 1.16, 0.95); m.rotation.set(-0.03, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.085), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, opacity: 0.88, toneMapped: false, depthWrite: false, depthTest: false }));
+    m.position.set(EYE.x, 1.128, 0.95); m.rotation.set(-0.03, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
     this.root.add(m); this.hudMesh = m;
   }
   drawHUD(st) {
