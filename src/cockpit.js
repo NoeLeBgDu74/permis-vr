@@ -137,9 +137,12 @@ export class Cockpit {
     const c = document.createElement('canvas'); c.width = 640; c.height = 160;
     this.hud = c; this.hudG = c.getContext('2d');
     this.hudTex = new THREE.CanvasTexture(c); this.hudTex.colorSpace = THREE.SRGBColorSpace;
-    // bandeau plat posé au pied du pare-brise, entièrement au-dessus de la jante du volant (≈ 1 à 5° sous l'horizon)
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.085), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, opacity: 0.88, toneMapped: false, depthWrite: false, depthTest: false }));
-    m.position.set(EYE.x, 1.128, 0.95); m.rotation.set(-0.03, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
+    // projeté SUR le pare-brise : plan incliné comme la vitre (pente mesurée : 0,40 m de haut pour 0,84 m de profondeur),
+    // placé entre ~1,5° et ~5,5° sous l'horizon du conducteur, donc au-dessus de la jante du volant.
+    // La vitre étant très inclinée, le plan est étiré en hauteur pour que le texte paraisse droit.
+    const tilt = Math.atan2(0.84, 0.40);          // ≈ 64° : normale de la vitre vers le conducteur
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075 / Math.cos(tilt - 0.06)), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false }));
+    m.position.set(EYE.x, 1.153, 0.795); m.rotation.set(-tilt, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
     this.root.add(m); this.hudMesh = m;
   }
   drawHUD(st) {
