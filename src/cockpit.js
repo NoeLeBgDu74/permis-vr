@@ -176,6 +176,7 @@ export class Cockpit {
     // rapport (gauche) + clignotants
     g.textAlign = 'center'; txt(st.gear, 120, 82, '800 64px Inter, Arial', '#f2fdff', 10);
     if (st.blink && st.blinkPhase) txt(st.blink === 'L' ? '◀' : '▶', st.blink === 'L' ? 40 : 200, 82, '800 50px Inter, Arial', '#28e070', 8);
+    if (st.lights) txt(st.lights === 2 ? '≣D' : '≡D', 120, 136, '800 26px Inter, Arial', st.lights === 2 ? '#4aa3ff' : '#2fd27a', 6);
     if (st.handbrake) { g.textAlign = 'left'; txt(st.pc ? '(P) FREIN À MAIN — touche X (ou accélère)' : '(P) FREIN À MAIN', 10, 16, '800 24px Inter, Arial', '#ff4040', 6); g.textAlign = 'center'; }
     // limitation (droite)
     if (st.limit) {
@@ -193,7 +194,7 @@ export class Cockpit {
       const geo = shape === 'round' ? roundedPlane(w, h, h * 0.35) : roundedPlane(w, h, h * 0.45);
       // image miroir : UV inversées horizontalement
       const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i));
-      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: rt.texture, toneMapped: false }));
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: rt.texture, toneMapped: true })); // l'image du miroir est en HDR linéaire : même rendu que la scène
       const frame = new THREE.Mesh(roundedPlane(w + 0.016, h + 0.016, h * 0.45), new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.5 }));
       const g = new THREE.Group(); g.position.copy(pos); g.rotation.copy(rot);
       mesh.rotation.y = Math.PI; frame.rotation.y = Math.PI; frame.position.z = 0.004; g.add(frame, mesh);

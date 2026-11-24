@@ -662,6 +662,7 @@ export class City {
       }
     }
     for (const l of (this.lampSpots || [])) mats.push(l);
+    this.lampPlaces = mats.map(m => ({ hx: m.x, hz: m.z }));
     instGLB(this.group, lamp.scene, mats, 6.5);
     const hyd = await glb('assets/props/fire_hydrant.glb').catch(() => null);
     if (hyd) { const hs = []; for (const b of this.blocks) if (R() < 0.7) hs.push({ x: b.x0 + 0.6, z: b.z0 + 10 + R() * 40, yaw: R() * 6 }); instGLB(this.group, hyd.scene, hs, 0.75); }

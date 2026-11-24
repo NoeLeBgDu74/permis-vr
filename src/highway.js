@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTex, pbr } from './assets.js';
 import { loadCarTemplate, makeCar, poseCar, carLOD, PAINTS } from './car.js';
+import { buildTruck, buildBus } from './vehicles.js';
 
 export const D = 520, RCO = 140, SIDE = 2 * (D - RCO);
 export const PER = 4 * SIDE + 2 * Math.PI * RCO;
@@ -210,6 +211,13 @@ export class Highway {
       a.uTarget = a.lane ? U.lane2 : U.lane1; a.ucur = a.uTarget;
       this.scene.add(car.obj); this.cars.push(a);
     }
+    // poids lourds : toujours sur la voie de droite, 80-90 km/h, pas de dépassement
+    for (let i = 0; i < 8; i++) {
+      const car = i % 4 === 3 ? buildBus({ interior: false }) : buildTruck({ interior: false });
+      const a = { car, cw: i % 2 ? 'in' : 'out', heavy: true, s: ((i + 0.5) / 8) * PER, lane: 1, u: 0, v: 24, v0: (80 + Math.random() * 10) / 3.6, len: car.tpl.size.z, half: car.tpl.size.x / 2, spin: 0, laneT: 0 };
+      a.uTarget = U.lane2; a.ucur = a.uTarget;
+      this.scene.add(car.obj); this.cars.push(a);
+    }
   }
   // sens de circulation : chaussée « in » (u<0) roule vers les s croissants, « out » vers les s décroissants
   updateTraffic(dt, player, rainy) {
@@ -230,7 +238,7 @@ export class Highway {
       if (P && P.cw === a.cw) consider(P.s, P.u, Math.abs(P.v), P.len);
       // changement de voie : dépasser si gêné, se rabattre dès que possible
       a.laneT -= dt;
-      if (a.laneT <= 0) {
+      if (a.laneT <= 0 && !a.heavy) {
         const want = a.lane === 1 ? (gap < 60 && lv < a.v0 * vmaxK - 3 ? 0 : 1) : (this.laneFree(a, 1, P) ? 1 : 0);
         if (want !== a.lane && this.laneFree(a, want, P)) { a.lane = want; a.laneT = a.fou ? 1.2 : 4; }
         else a.laneT = 0.6;

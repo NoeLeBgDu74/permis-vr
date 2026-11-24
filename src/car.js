@@ -2,6 +2,7 @@
 // et physique simple de voiture à boîte automatique (modèle bicyclette).
 import * as THREE from 'three';
 import { glb } from './assets.js';
+import { NIGHT } from './night.js';
 
 export const MODELS = {
   ace11: { file: 'ace11', length: 4.05 },
@@ -134,12 +135,13 @@ export function carLOD(car, dist) {
   car.obj.traverse(o => { if (o.isMesh) o.castShadow = !lod; });
 }
 
-export function poseCar(car, { spin = 0, steer = 0, brake = false, reverse = false, blink = 0, wheelAngle }) {
+export function poseCar(car, { spin = 0, steer = 0, brake = false, reverse = false, blink = 0, wheelAngle, head }) {
   for (const k in car.wheels) { const w = car.wheels[k]; w.spin.rotation.x = spin; if (k[0] === 'F') w.steer.rotation.y = steer; }
-  for (const m of car.lights.brake) m.emissiveIntensity = brake ? 5 : 0.25;
+  for (const m of car.lights.brake) m.emissiveIntensity = brake ? 5 : (NIGHT.on ? 1.6 : 0.25);
   for (const m of car.lights.reverse) m.emissiveIntensity = reverse ? 3 : 0;
   for (const m of car.lights.blink) m.emissiveIntensity = blink;
-  for (const m of car.lights.head) m.emissiveIntensity = 0.6;
+  const hv = head !== undefined ? head : (NIGHT.on ? 5 : 0.6);
+  for (const m of car.lights.head) m.emissiveIntensity = hv;
   if (car.steeringWheel && wheelAngle !== undefined) { SW.fromArray(car.steeringWheel.userData.axis); car.steeringWheel.quaternion.setFromAxisAngle(SW, -wheelAngle); }
 }
 const SW = new THREE.Vector3();
@@ -204,7 +206,7 @@ export class Physics {
     const o = this.car.obj;
     o.position.set(this.x, 0, this.z);
     o.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ');
-    poseCar(this.car, { spin: this.spin, steer: this.steer, brake: this.brakeLight, reverse: this.gear === 'R', blink: this.blinkOn ? 4 : 0, wheelAngle: this.wheelAngle });
+    poseCar(this.car, { spin: this.spin, steer: this.steer, brake: this.brakeLight, reverse: this.gear === 'R', blink: this.blinkOn ? 4 : 0, wheelAngle: this.wheelAngle, head: this.headMode === undefined ? undefined : (this.headMode ? 5 : 0.3) });
   }
   // coins du véhicule (monde), marge optionnelle
   corners(m = 0) {

@@ -15,6 +15,7 @@ import { Audio } from './audio.js';
 import { Voice } from './voice.js';
 import { applyRainLook, Rain, Windshield } from './weather.js';
 import { Highway } from './highway.js';
+import { applyNight, Headlights, NIGHT } from './night.js';
 import { setAnisotropy } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
@@ -65,7 +66,7 @@ async function launch(mode, vr) {
     } catch (e) { alert('Impossible de démarrer la VR : ' + e.message); return; }
   }
   $('menu').classList.add('hidden'); $('loading').classList.remove('hidden');
-  try { await ensureWorld(qualSel.value, params.get('meteo') || $('weather').value); await startGame(mode); }
+  try { await ensureWorld(qualSel.value, params.get('meteo') || $('weather').value, params.get('nuit') ? 'night' : $('daytime').value); await startGame(mode); }
   catch (e) { console.error(e); $('loading').textContent = 'Erreur de chargement : ' + e.message; return; }
   $('loading').classList.add('hidden');
   if (session) {
@@ -77,8 +78,9 @@ async function launch(mode, vr) {
   } else { $('hud').classList.remove('hidden'); }
 }
 
-async function ensureWorld(quality, weather = 'sun') {
+async function ensureWorld(quality, weather = 'sun', daytime = 'day') {
   if (world) return;
+  if (daytime === 'random') daytime = Math.random() < 0.4 ? 'night' : 'day';
   if (weather === 'random') weather = Math.random() < 0.45 ? 'rain' : 'sun';
   if (quality === 'medium') { renderer.shadowMap.enabled = true; }
   const env = await setupEnv(renderer, scene, quality);
@@ -90,6 +92,7 @@ async function ensureWorld(quality, weather = 'sun') {
   const tpl = await loadCarTemplate('ace11');
   world = { env, city, traffic, quality, tpl, rain: null, hw, rainy: weather === 'rain' };
   await hw.initTraffic(quality === 'medium' ? 16 : 26);
+  if (daytime === 'night') await applyNight(renderer, scene, env, city);
   if (weather === 'rain') { applyRainLook(scene, env, city); world.rain = new Rain(scene); audio.startRain(); }
   // compile les shaders tout de suite (évite les saccades au premier regard)
   renderer.compile(scene, camera);
@@ -114,6 +117,7 @@ async function startGame(mode) {
   const inspector = LAY.passenger ? await loadInspector(car, LAY.passenger).catch(e => { console.warn(e); return null; }) : null;
   const cockpit = new Cockpit(car, renderer, world.quality);
   const windshield = world.rain && LAY.windshield ? new Windshield(car, LAY.windshield) : null;
+  const headlights = new Headlights(car); headlights.set(0); phys.headMode = 0;
   // plaque « auto-école » sur le toit
   if (vclass === 'B') car.obj.add(makeSchoolSign(car));
   // rig de tête : caméra + manettes, à la place conducteur
@@ -132,7 +136,7 @@ async function startGame(mode) {
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
   const exam = new Exam({ city, traffic, hw: world.hw, rainy: world.rainy, vclass, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
   voice.persona = exam.mood.persona; voice.rate = exam.mood.rate; voice.history = [];
-  game = { vclass, LAY, mode, car, phys, cockpit, interior, inspector, windshield, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  game = { vclass, LAY, mode, car, phys, cockpit, interior, inspector, windshield, headlights, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.begin();
 }
 
@@ -187,6 +191,7 @@ function loop() {
   const setGear = (g) => { if (g === phys.gear) return; if (g === 'P' && kmh > 2) return; if ((g === 'R' && phys.v > 1.5) || (g === 'D' && phys.v < -1.5)) return; phys.gear = g; audio.click(true); pulse(0, 0.5, 30); pulse(1, 0.5, 30); };
   if (inp.events.has('gear')) setGear(phys.gear === 'R' ? 'D' : 'R');
   if (inp.events.has('gearN')) setGear('N');
+  if (inp.events.has('lights')) { G.headlights.cycle(); phys.headMode = G.headlights.mode; audio.click(true); }
   if (inp.events.has('handbrake')) { phys.handbrake = !phys.handbrake; audio.click(false); }
   // frein à main électrique : se desserre tout seul quand on accélère en D ou R
   if (phys.handbrake && (phys.gear === 'D' || phys.gear === 'R') && inp.throttle > 0.3) { phys.handbrake = false; audio.click(true); }
@@ -317,7 +322,7 @@ function loop() {
   G.clT -= dt; G.scrT -= dt;
   if (G.clT <= 0) {
     G.clT = 0.1;
-    const cst = { pc: !xr, handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase };
+    const cst = { lights: G.headlights.mode, pc: !xr, handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase };
     cockpit.drawCluster(cst); cockpit.drawHUD(cst);
   }
   if (G.scrT <= 0) {

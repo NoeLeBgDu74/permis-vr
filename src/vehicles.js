@@ -185,7 +185,6 @@ export function buildTruck({ interior = true } = {}) {
     addWheel(car, sx > 0 ? 'RL' : 'RR', sx * (W / 2 - 0.35), 0.5, rz, 0.3, M, true);
   }
   if (interior) car.interior = truckCab(car, { W, floor, roof, belt, cabZ0, cabZ1, tiltWS });
-  car.obj.traverse(o => { if (o.isMesh && o.castShadow) car.details.push(o); });
   return car;
 }
 function truckCab(car, { W, floor, roof, belt, cabZ0, cabZ1, tiltWS }) {

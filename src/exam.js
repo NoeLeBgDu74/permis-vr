@@ -5,6 +5,7 @@ import { roundClear } from './traffic.js';
 import { MOODS, randomMood, pick } from './moods.js';
 import { TALK, ELIM_END, FREE_ELIM, REACT } from './talk.js';
 import { at as hwAt, PER as HW_PER } from './highway.js';
+import { NIGHT } from './night.js';
 
 const FAULTS = {
   blink: { label: 'Clignotant non utilisé avant de tourner', pts: 1 },
@@ -26,6 +27,7 @@ const FAULTS = {
   stopHW: { label: 'Ralentissement / arrêt injustifié sur autoroute', pts: 2 },
   bau: { label: 'Circulation sur la bande d\'arrêt d\'urgence', pts: 2 },
   insertion: { label: 'Insertion trop lente sur l\'autoroute', pts: 1 },
+  lights: { label: 'Circulation de nuit sans les feux', pts: 2 },
   brake: { label: 'Freinage brusque', pts: 1 },
   slow: { label: 'Manque d\'allure', pts: 1 },
   // éliminatoires
@@ -61,7 +63,8 @@ export class Exam {
 
   begin() {
     const veh = { B: '', C: ' Aujourd\'hui : permis poids lourd. Attention au gabarit dans les virages, prenez large.', D: ' Aujourd\'hui : permis transport en commun. Douceur, pensez à vos passagers.', A: ' Aujourd\'hui : permis moto. Je vous suis en voiture et je vous guide à la radio.' }[this.vclass] || '';
-    if (this.mode === 'exam') this.speak(pick(this.mood.hello) + veh + (this.vclass === 'A' ? ' Passez en D, clignotant gauche, contrôle de l\'angle mort, puis démarrez.' : ' Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.'));
+    if (NIGHT.on) this.nightHint = ' Il fait nuit : n\'oubliez pas d\'allumer vos phares.';
+    if (this.mode === 'exam') this.speak(pick(this.mood.hello) + veh + (this.nightHint || '') + (this.vclass === 'A' ? ' Passez en D, clignotant gauche, contrôle de l\'angle mort, puis démarrez.' : ' Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.'));
     else this.speak('Conduite libre : roulez où vous voulez. Je vous signale les erreurs pour vous entraîner.');
   }
 
@@ -118,6 +121,8 @@ export class Exam {
   update(dt, car, ctl, blink) {
     this.t += dt;
     if (blink) this.blinkSeen[blink] = this.t;
+    // de nuit : feux obligatoires
+    if (NIGHT.on && !car.headMode && Math.abs(car.v) > 1.5) { this.darkT = (this.darkT || 0) + dt; if (this.darkT > 4) { this.fault('lights'); this.darkT = -6; } } else if (car.headMode) this.darkT = 0;
     // un chauffard passe à toute vitesse près de nous ?
     if (this.state !== 'done') for (const a of [...this.traffic.cars, ...(this.hw ? this.hw.cars : [])]) {
       if (!a.fou) continue;

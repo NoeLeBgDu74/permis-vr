@@ -37,7 +37,7 @@ export class Input {
     if (this.any('s', 'arrowdown', ' ')) st.brake = 1;
     if (this.any('q', 'arrowleft')) st.steer += 1;
     if (this.any('d', 'arrowright')) st.steer -= 1;
-    for (const [k, ev] of [['a', 'blinkL'], ['e', 'blinkR'], ['r', 'gear'], ['n', 'gearN'], ['p', 'park'], ['x', 'handbrake'], ['g', 'wipers'], ['h', 'horn'], ['c', 'cam'], ['enter', 'restart'], ['escape', 'menu'], ['v', 'recenter'], ['f', 'free']]) if (this.take(k)) st.events.add(ev);
+    for (const [k, ev] of [['a', 'blinkL'], ['e', 'blinkR'], ['r', 'gear'], ['n', 'gearN'], ['p', 'park'], ['x', 'handbrake'], ['g', 'wipers'], ['l', 'lights'], ['h', 'horn'], ['c', 'cam'], ['enter', 'restart'], ['escape', 'menu'], ['v', 'recenter'], ['f', 'free']]) if (this.take(k)) st.events.add(ev);
     st.hornHeld = this.keys.has('h');
     st.talk = this.keys.has('t');
     // manettes VR
@@ -59,7 +59,7 @@ export class Input {
         if (edge(4)) st.events.add('blinkL');          // X
         if (edge(5)) st.events.add('blinkR');          // Y
         const x = ax[2] || 0; if (Math.abs(x) > 0.15) st.steer = -x;
-        if (edge(3)) st.events.add('park');
+        if (edge(3)) st.events.add('lights');        // clic joystick gauche : phares
       }
       const np = {}; for (let i = 0; i < b.length; i++) np[i] = down(i); np.ay = Math.abs(ax[3] || 0) > 0.6;
       this.xrPrev[hand] = np;
