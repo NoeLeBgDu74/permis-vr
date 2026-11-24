@@ -157,6 +157,8 @@ function loop() {
   if (inp.events.has('gear')) {
     if (kmh < 3) { phys.gear = phys.gear === 'D' ? 'R' : 'D'; audio.click(true); }
   }
+  // accélérer en P : passe tout seul en D (boîte automatique)
+  if (phys.gear === 'P' && inp.throttle > 0.3) { phys.gear = 'D'; audio.click(true); }
   if (inp.events.has('park') && kmh < 2) { phys.gear = 'P'; audio.click(true); }
   if (inp.events.has('blinkL')) { G.blink = G.blink === 'L' ? null : 'L'; G.blinkPeak = 0; G.blinkT = 0; }
   if (inp.events.has('blinkR')) { G.blink = G.blink === 'R' ? null : 'R'; G.blinkPeak = 0; G.blinkT = 0; }

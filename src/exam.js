@@ -42,7 +42,7 @@ export class Exam {
   speak(text, voice = true) { this.say = text; this.sayT = this.t; if (voice) this.audio.say(text); }
 
   begin() {
-    if (this.mode === 'exam') this.speak('Bonjour, je suis votre inspecteur. Passez en marche avant avec A, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
+    if (this.mode === 'exam') this.speak('Bonjour, je suis votre inspecteur. Mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
     else this.speak('Conduite libre : roulez où vous voulez. Je vous signale les erreurs pour vous entraîner.');
   }
 

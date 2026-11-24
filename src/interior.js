@@ -166,7 +166,7 @@ export function buildInterior(car) {
   // ---------- console et levier de vitesses ----------
   mesh(rb(0.24, 0.36, 1.0, 0.04), M.trim, [0, 0.4, 0.0], null, root);
   mesh(rb(0.25, 0.02, 0.55, 0.01), M.piano, [0, 0.58, 0.18], null, root);
-  const gate = mesh(new THREE.PlaneGeometry(0.05, 0.13), new THREE.MeshBasicMaterial({ map: canvasTex(64, 160, (g) => { g.fillStyle = '#060606'; g.fillRect(0, 0, 64, 160); g.font = 'bold 30px Arial'; g.textAlign = 'center'; ['P', 'R', 'N', 'D'].forEach((k, i) => { g.fillStyle = '#9aa0a8'; g.fillText(k, 32, 34 + i * 36); }); }), toneMapped: false }), [0.075, 0.592, 0.18], [-Math.PI / 2, 0, 0], root);
+  const gate = mesh(new THREE.PlaneGeometry(0.05, 0.13), new THREE.MeshBasicMaterial({ map: canvasTex(64, 160, (g) => { g.fillStyle = '#060606'; g.fillRect(0, 0, 64, 160); g.font = 'bold 30px Arial'; g.textAlign = 'center'; ['P', 'R', 'N', 'D'].forEach((k, i) => { g.fillStyle = '#9aa0a8'; g.fillText(k, 32, 34 + i * 36); }); }), toneMapped: false }), [0.075, 0.592, 0.18], [-Math.PI / 2, 0, Math.PI], root);
   void gate;
   const lever = new THREE.Group(); lever.position.set(0, 0.59, 0.18); root.add(lever);
   mesh(rb(0.06, 0.012, 0.16, 0.005), M.rubber, [0, 0.004, 0], null, lever);           // soufflet
