@@ -37,12 +37,23 @@ export class Audio {
   update(rpm, kmh, throttle, hornOn) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    const fr = rpm / 60 * 2;       // 4 cylindres : 2 explosions par tour
+    const P = this.prof || { k: 1, f: 1, v: 1 };
+    const fr = rpm / 60 * 2 * P.k;  // 4 cylindres : 2 explosions par tour (diesel lourd plus grave, moto plus aiguë)
     this.o1.frequency.setTargetAtTime(fr, t, 0.05); this.o2.frequency.setTargetAtTime(fr / 2, t, 0.05);
-    this.engF.frequency.setTargetAtTime(300 + rpm * 0.25 + throttle * 600, t, 0.08);
-    this.eng.gain.setTargetAtTime(this.muted ? 0 : 0.05 + throttle * 0.06 + rpm / 60000, t, 0.1);
+    this.engF.frequency.setTargetAtTime((300 + rpm * 0.25 + throttle * 600) * P.f, t, 0.08);
+    this.eng.gain.setTargetAtTime(this.muted ? 0 : (0.05 + throttle * 0.06 + rpm / 60000) * P.v, t, 0.1);
     this.road.gain.setTargetAtTime(this.muted ? 0 : Math.min(0.5, kmh / 130), t, 0.2);
     this.horn.gain.setTargetAtTime(hornOn && !this.muted ? 0.16 : 0, t, 0.02);
+  }
+  setProfile(kind) { this.prof = { truck: { k: 0.42, f: 0.55, v: 1.5 }, bus: { k: 0.48, f: 0.6, v: 1.3 }, moto: { k: 1.9, f: 1.6, v: 1.1 } }[kind] || { k: 1, f: 1, v: 1 }; }
+  // sirène « deux tons » des véhicules d'urgence (volume selon la distance, 0 = coupée)
+  siren(dist) {
+    if (!this.ctx) return;
+    const C = this.ctx;
+    if (!this.sir) { const o = C.createOscillator(); o.type = 'triangle'; const g = C.createGain(); g.gain.value = 0; o.connect(g); g.connect(this.master); o.start(); this.sir = { o, g }; }
+    const t = C.currentTime, on = dist < 140 && !this.muted;
+    this.sir.o.frequency.setValueAtTime((Math.floor(t / 0.55) % 2) ? 488 : 435, t);
+    this.sir.g.gain.setTargetAtTime(on ? 0.16 * Math.max(0.08, 1 - dist / 140) : 0, t, 0.1);
   }
   // klaxon d'un autre véhicule (volume selon la distance)
   honk(dist) {

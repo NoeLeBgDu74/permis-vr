@@ -29,6 +29,7 @@ const FAULTS = {
   bau: { label: 'Circulation sur la bande d\'arrêt d\'urgence', pts: 2 },
   insertion: { label: 'Insertion trop lente sur l\'autoroute', pts: 1 },
   lights: { label: 'Circulation de nuit sans les feux', pts: 2 },
+  urgence: { label: 'Gêne d\'un véhicule prioritaire', pts: 2 },
   brake: { label: 'Freinage brusque', pts: 1 },
   slow: { label: 'Manque d\'allure', pts: 1 },
   // éliminatoires
@@ -128,6 +129,14 @@ export class Exam {
     if (blink) this.blinkSeen[blink] = this.t;
     // de nuit : feux obligatoires
     if (NIGHT.on && !car.headMode && Math.abs(car.v) > 1.5) { this.darkT = (this.darkT || 0) + dt; if (this.darkT > 4) { this.fault('lights'); this.darkT = -6; } } else if (car.headMode) this.darkT = 0;
+    // véhicule d'urgence derrière nous : il faut faciliter son passage (ralentir, serrer à droite)
+    for (const a of this.traffic.cars) {
+      if (!a.urgent) continue;
+      const rx = a.x - car.x, rz = a.z - car.z, d = Math.hypot(rx, rz), fwd = car.forward();
+      const behind = (rx * fwd.x + rz * fwd.z) < -3 && Math.abs(rx * fwd.z - rz * fwd.x) < 3 && (Math.sin(a.yaw) * fwd.x + Math.cos(a.yaw) * fwd.z) > 0.7;
+      if (d < 60 && behind && this.t - (this.urgSaid || -99) > 40) { this.urgSaid = this.t; this.speak(a.urgent === 'police' ? 'La police arrive derrière nous, laissez-la passer : serrez à droite et ralentissez.' : 'Une ambulance derrière nous ! Facilitez-lui le passage, serrez à droite.'); }
+      if (d < 22 && behind && Math.abs(car.v) > 3 && (this.rightOff ?? 0) < LO + 0.6) { this.urgT = (this.urgT || 0) + dt; if (this.urgT > 7) { this.fault('urgence'); this.urgT = -10; } } else if (!behind) this.urgT = 0;
+    }
     // un chauffard passe à toute vitesse près de nous ?
     if (this.state !== 'done') for (const a of [...this.traffic.cars, ...(this.hw ? this.hw.cars : [])]) {
       if (!a.fou) continue;

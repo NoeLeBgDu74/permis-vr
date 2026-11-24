@@ -45,6 +45,20 @@ export class Traffic {
       this.scene.add(car.obj);
       this.parked.push({ x: sp.x, z: sp.z, yaw: sp.yaw, v: 0, len: tpl.size.z, half: tpl.size.x / 2, car, street: y === 0 });
     }
+    // véhicules d'urgence : ambulance (blanche) et police (bleu nuit), gyrophares + sirène, priorité absolue
+    for (const [id, paint, kind] of [['sigil07', '#f4f4f2', 'ambulance'], ['milano95', '#16244a', 'police']]) {
+      const tpl = await loadCarTemplate(id), car = makeCar(tpl, paint);
+      const bar = new THREE.Group(); bar.position.set(0, tpl.size.y + 0.06, -0.1);
+      const blue = [0, 1].map(() => new THREE.MeshStandardMaterial({ color: 0x0a1a66, emissive: 0x2a5bff, emissiveIntensity: 0, toneMapped: false }));
+      for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.22), blue[sx > 0 ? 0 : 1]); m.position.x = sx * 0.25; bar.add(m); }
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.3), new THREE.MeshStandardMaterial({ color: 0x222222 })); base.position.y = -0.07; bar.add(base);
+      car.obj.add(bar);
+      if (kind === 'ambulance') { const st = new THREE.Mesh(new THREE.BoxGeometry(tpl.size.x + 0.02, 0.14, tpl.size.z * 0.7), new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.5 })); st.position.y = 0.78; car.obj.add(st); }
+      const i = Math.floor(Math.random() * N), j = 1 + Math.floor(Math.random() * (N - 2));
+      const a = { car, from: this.city.node(i, j), d: 'E', s: 10, v: 8, phase: 'seg', len: tpl.size.z, half: tpl.size.x / 2, pace: 1.45, urgent: kind, blue, wait: 0, cleared: false, stopped: 0, spin: 0, honkT: 0, shift: 0 };
+      if (!this.city.node(i + 1, j)) a.d = 'W';
+      this.planNext(a); this.place(a); this.scene.add(car.obj); this.cars.push(a);
+    }
     await this.initPeds();
   }
 
@@ -62,7 +76,8 @@ export class Traffic {
   lanePoint(n, dk, s) {
     const d = dirOf(dk), r = rightOf(d);
     const R0 = radOf(n);
-    return { x: n.x + d.dx * (R0 + s) + r.x * LO, z: n.z + d.dz * (R0 + s) + r.z * LO };
+    const L = LO - (this._shift || 0);
+    return { x: n.x + d.dx * (R0 + s) + r.x * L, z: n.z + d.dz * (R0 + s) + r.z * L };
   }
   buildTurn(a) {
     const B = this.toNode(a), d = dirOf(a.d), r = rightOf(d), d2 = dirOf(a.nd), r2 = rightOf(d2);
@@ -92,7 +107,7 @@ export class Traffic {
   place(a) {
     let x, z, yaw;
     if (a.phase === 'seg') {
-      const p = this.lanePoint(a.from, a.d, a.s); x = p.x; z = p.z; const d = dirOf(a.d); yaw = Math.atan2(d.dx, d.dz);
+      this._shift = a.shift || 0; const p = this.lanePoint(a.from, a.d, a.s); this._shift = 0; x = p.x; z = p.z; const d = dirOf(a.d); yaw = Math.atan2(d.dx, d.dz);
     } else {
       const P = a.turnPts; let k = 1; while (k < P.length - 1 && P[k].L < a.s) k++;
       const p0 = P[k - 1], p1 = P[k], t = (a.s - p0.L) / Math.max(1e-4, p1.L - p0.L);
@@ -162,7 +177,7 @@ export class Traffic {
           let go = true;
           if (ctl === 'light') {
             const st = city.lightState(B, axis);
-            if (st === 'R') go = !!(a.dare && toLine < 30);
+            if (st === 'R') go = !!((a.dare || a.urgent) && toLine < 30);
             else if (st === 'O') go = toLine < a.v * a.v / 6 + 1;
           } else if (ctl === 'stop') {
             if (a.stopped < 1.0) go = false;
@@ -176,6 +191,7 @@ export class Traffic {
           } else if (ctl === 'round') {
             if (toLine < 14) go = this.clearRound(a, B, bodies) || a.wait > 9;
           }
+          if (a.urgent && toLine < 12) { go = !this.boxBusy(B, bodies, a); v0 = Math.min(v0, 6); }
           if (go && toLine < 10 && ctl !== 'major' && ctl !== 'round' && this.boxBusy(B, bodies, a)) go = false;
           if (go && toLine < 8) a.cleared = true;
           if (!go) { stopGap = Math.min(stopGap, Math.max(0.1, toLine - 0.3)); a.wait += dt; a.waiting = toLine < 9; }
@@ -198,6 +214,14 @@ export class Traffic {
         if (!p.onRoad) continue;
         const rx = p.x - a.x, rz = p.z - a.z, f = rx * fx + rz * fz; if (f <= 0 || f > 20) continue;
         if (Math.abs(rx * fz - rz * fx) < 1.8) { const gap = f - a.len / 2 - 0.6; if (gap < lead) { lead = gap; leadV = 0; } }
+      }
+      // urgence bloquée derrière quelqu'un : elle déboîte à gauche pour doubler
+      if (a.urgent) {
+        const want = a.phase === 'seg' && lead < 14 && a.v < 6 && this.segLen(a) - a.s > 30 ? 2 * LO : (a.overT > 0 ? 2 * LO : 0);
+        if (want && !a.overT) a.overT = 4; if (a.overT) a.overT = Math.max(0, a.overT - dt);
+        a.shift = (a.shift || 0) + Math.sign(want - (a.shift || 0)) * Math.min(Math.abs(want - (a.shift || 0)), dt * 2.5);
+        if (a.shift > 0.5) lead = Infinity;
+        const ph = (performance.now() % 500) < 250; a.blue[0].emissiveIntensity = ph ? 6 : 0.2; a.blue[1].emissiveIntensity = ph ? 0.2 : 6;
       }
       // le chauffard klaxonne s'il est bloqué derrière le joueur
       if (a.fou && a.leadIsPlayer && lead < 9 && a.v < 3) { a.honkT += dt; if (a.honkT > 1.5) { a.honkT = -4; this.honks.push({ x: a.x, z: a.z, fou: true }); } } else if (a.honkT > 0) a.honkT = 0; else a.honkT += dt;

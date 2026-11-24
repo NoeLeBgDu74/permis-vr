@@ -118,6 +118,7 @@ async function startGame(mode) {
   const inspector = LAY.passenger ? await loadInspector(car, LAY.passenger).catch(e => { console.warn(e); return null; }) : null;
   const cockpit = new Cockpit(car, renderer, world.quality);
   const windshield = world.rain && LAY.windshield ? new Windshield(car, LAY.windshield) : null;
+  audio.setProfile(car.kind);
   const headlights = new Headlights(car); headlights.set(0); phys.headMode = 0;
   // plaque « auto-école » sur le toit
   if (vclass === 'B') car.obj.add(makeSchoolSign(car));
@@ -339,6 +340,7 @@ function loop() {
   if (G.windshield) { if (inp.events.has('wipers')) G.windshield.on = !G.windshield.on; G.windshield.update(dt, kmh, true); }
   world.traffic.update(dt, { x: phys.x, z: phys.z, yaw: phys.yaw, v: phys.v, len: car.tpl.size.z, half: car.tpl.size.x / 2 });
   for (const h of world.traffic.honks.splice(0)) { const d = Math.hypot(h.x - phys.x, h.z - phys.z); if (d < 60) { audio.honk(d); if (d < 15) exam.react('honk'); } }
+  { let dmin = 999; for (const a of world.traffic.cars) if (a.urgent) dmin = Math.min(dmin, Math.hypot(a.x - phys.x, a.z - phys.z)); audio.siren(dmin); }
   world.hw.updateTraffic(dt, { x: phys.x, z: phys.z, v: phys.v, len: car.tpl.size.z }, world.rainy);
   // regard (repère voiture)
   camera.getWorldPosition(tmpV); camera.getWorldQuaternion(tmpQ);

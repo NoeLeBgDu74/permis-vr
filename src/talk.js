@@ -21,6 +21,7 @@ export const TALK = {
   stopHW: ['On ne ralentit pas comme ça sur l\'autoroute, c\'est dangereux.'],
   bau: ['Vous êtes sur la bande d\'arrêt d\'urgence, revenez sur la voie !'],
   insertion: ['Il fallait accélérer davantage pour vous insérer.', 'Sur la bretelle, on prend de la vitesse avant de s\'insérer.'],
+  urgence: ['Il fallait laisser passer l\'ambulance, voyons !', 'Un véhicule prioritaire, on s\'écarte !'],
   lights: ['Vous roulez dans le noir ! Allumez vos phares.', 'Les feux, s\'il vous plaît, on ne voit rien !'],
   // éliminatoires
   red: ['Stop ! Le feu était rouge !', 'Mais… c\'était rouge !'],
