@@ -76,10 +76,10 @@ export class Exam {
     // humeur : un inspecteur fatigué ou distrait peut ne pas voir un oubli de contrôle ; un inspecteur indulgent accorde parfois une faute légère
     if (!F.elim && ['mirror', 'blind', 'blinkStart', 'blink', 'blinkExit'].includes(key) && Math.random() < this.mood.blindSpot) return;
     if (!F.elim && this.mode === 'exam' && Math.random() < this.mood.forgive && this.mood.forgiveLines.length) {
-      this.faults.push({ key, label: F.label + extra + ' — accordée', pts: 0, elim: false, t: this.t, forgiven: true });
+      this.faults.push({ key, label: F.label + extra + ' — accordée', pts: 0, elim: false, t: this.t, forgiven: true, x: this.pos && this.pos[0], z: this.pos && this.pos[1] });
       this.audio.beep('warn'); this.speak(pick(TALK[key] || [F.label + '.']) + ' ' + pick(this.mood.forgiveLines)); return;
     }
-    const f = { key, label: F.label + extra, pts: F.pts || 0, elim: !!F.elim, t: this.t };
+    const f = { key, label: F.label + extra, pts: F.pts || 0, elim: !!F.elim, t: this.t, x: this.pos && this.pos[0], z: this.pos && this.pos[1] };
     this.faults.push(f);
     this.audio.beep(f.elim ? 'elim' : 'warn');
     if (f.elim) {
@@ -100,7 +100,8 @@ export class Exam {
     const ok = !elim && note >= 20;
     this.state = 'done';
     const lines = this.faults.length ? this.faults.map(f => (f.elim ? '⛔ ' : '• ') + f.label + (f.pts ? ` (−${f.pts})` : '')) : ['Aucune faute, conduite exemplaire !'];
-    this.result = { ok, note: `Note : ${note} / 31${elim ? ' — faute éliminatoire' : ''}`, lines, hint: 'A / Entrée : recommencer   ·   B / F : conduite libre' };
+    this.result = { ok, noteN: note, note: `Note : ${note} / 31${elim ? ' — faute éliminatoire' : ''}`, lines, hint: 'A / Entrée : recommencer   ·   B / F : conduite libre', trace: this.trace || [], faults: this.faults.slice(), city: this.city, vclass: this.vclass, mood: this.mood, elim: !!elim, time: this.t };
+    if (this.onFinish) this.onFinish(this.result);
     if (!elim) this.speak(ok ? `Vous avez obtenu ${note} sur 31. ${this.mood.pass}` : `Vous avez ${note} sur 31, il faut au moins 20. ${this.mood.fail}`);
     this.audio.beep(ok ? 'ok' : 'elim');
   }
@@ -120,6 +121,8 @@ export class Exam {
   // car : Physics ; ctl : commandes ; blink : 'L'|'R'|null
   update(dt, car, ctl, blink) {
     this.t += dt;
+    this.pos = [car.x, car.z]; this.trace = this.trace || [];
+    if (this.state !== 'done' && (!this.trace.length || Math.hypot(car.x - this.trace[this.trace.length - 1][0], car.z - this.trace[this.trace.length - 1][1]) > 4)) this.trace.push([car.x, car.z]);
     if (blink) this.blinkSeen[blink] = this.t;
     // de nuit : feux obligatoires
     if (NIGHT.on && !car.headMode && Math.abs(car.v) > 1.5) { this.darkT = (this.darkT || 0) + dt; if (this.darkT > 4) { this.fault('lights'); this.darkT = -6; } } else if (car.headMode) this.darkT = 0;

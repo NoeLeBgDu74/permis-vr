@@ -15,6 +15,7 @@ import { Audio } from './audio.js';
 import { Voice } from './voice.js';
 import { applyRainLook, Rain, Windshield } from './weather.js';
 import { Highway } from './highway.js';
+import { drawMap } from './debrief.js';
 import { applyNight, Headlights, NIGHT } from './night.js';
 import { setAnisotropy } from './assets.js';
 
@@ -137,7 +138,24 @@ async function startGame(mode) {
   const exam = new Exam({ city, traffic, hw: world.hw, rainy: world.rainy, vclass, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
   voice.persona = exam.mood.persona; voice.rate = exam.mood.rate; voice.history = [];
   game = { vclass, LAY, mode, car, phys, cockpit, interior, inspector, windshield, headlights, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  exam.onFinish = (r) => showResultCard(r);
   exam.begin();
+  const old = document.getElementById('resultCard'); if (old) old.remove();
+}
+
+// fiche de résultat (PC) : grand plan + liste des fautes
+function showResultCard(r) {
+  if (renderer.xr.isPresenting) return;
+  const card = document.createElement('div'); card.id = 'resultCard';
+  card.style.cssText = 'position:fixed;inset:auto 16px 16px auto;z-index:8;background:rgba(8,13,24,.94);color:#e8eefb;border-radius:18px;padding:16px;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;font:14px Inter,Arial;box-shadow:0 20px 60px rgba(0,0,0,.5)';
+  const cv = document.createElement('canvas'); cv.width = 520; cv.height = 520; cv.style.cssText = 'width:100%;border-radius:12px;display:block;margin:10px 0';
+  const items = (r.faults || []).map((f, i) => `<div style="color:${f.elim ? '#ff6b6b' : f.forgiven ? '#8fa3c7' : '#ffc860'}">${i + 1}. ${f.label}${f.pts ? ` (−${f.pts})` : ''}</div>`).join('') || '<div>Aucune faute, conduite exemplaire !</div>';
+  card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b style="font-size:30px;color:${r.ok ? '#2ecc71' : '#ff4d4f'}">${r.ok ? 'ADMIS' : 'AJOURNÉ'}</b><span>Permis ${r.vclass} · ${r.note}</span></div><div style="opacity:.75;margin-top:4px">Inspecteur ${r.mood.emoji} ${r.mood.label} · durée ${Math.floor(r.time / 60)} min ${Math.round(r.time % 60)} s</div>`;
+  card.appendChild(cv);
+  const lst = document.createElement('div'); lst.innerHTML = items; card.appendChild(lst);
+  const btn = document.createElement('div'); btn.style.cssText = 'margin-top:10px;opacity:.8'; btn.textContent = 'Entrée : recommencer · F : conduite libre · Échap : menu'; card.appendChild(btn);
+  drawMap(cv.getContext('2d'), 0, 0, 520, r.city, r.trace || [], r.faults || []);
+  document.body.appendChild(card);
 }
 
 function makeSchoolSign(car) {

@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { WHEEL_MAX } from './car.js';
 import { CLUSTER } from './interior.js';
+import { drawMap } from './debrief.js';
 
 export const EYE = new THREE.Vector3(0.36, 1.21, -0.12);   // position des yeux (repère voiture, avant = +z, gauche = +x)
 const TILT_CAR = Math.atan2(0.84, 0.40);
@@ -76,12 +77,21 @@ export class Cockpit {
   }
   drawResult(r) {
     const g = this.scrG, W = 1024;
-    g.textAlign = 'center';
-    g.fillStyle = r.ok ? '#2ecc71' : '#ff4d4f'; g.font = '900 96px Inter, Arial'; g.fillText(r.ok ? 'ADMIS' : 'AJOURNÉ', W / 2, 80);
-    g.fillStyle = '#fff'; g.font = '700 44px Inter, Arial'; g.fillText(r.note, W / 2, 190);
-    g.textAlign = 'left'; g.font = '500 28px Inter, Arial'; g.fillStyle = '#c9d4e8';
-    let y = 260; for (const l of r.lines.slice(0, 6)) { g.fillText(l, 60, y); y += 38; }
-    g.textAlign = 'center'; g.fillStyle = '#7fb0ff'; g.font = '700 30px Inter, Arial'; g.fillText(r.hint, W / 2, 545); g.textAlign = 'left';
+    // colonne gauche : verdict + fautes numérotées ; à droite : plan du trajet
+    g.textAlign = 'left'; g.textBaseline = 'top';
+    g.fillStyle = r.ok ? '#2ecc71' : '#ff4d4f'; g.font = '900 78px Inter, Arial'; g.fillText(r.ok ? 'ADMIS' : 'AJOURNÉ', 36, 64);
+    g.fillStyle = '#fff'; g.font = '700 32px Inter, Arial'; g.fillText(r.note, 36, 152);
+    g.font = '500 22px Inter, Arial';
+    let y = 204;
+    const list = r.faults && r.faults.length ? r.faults : null;
+    if (!list) { g.fillStyle = '#c9d4e8'; g.fillText('Aucune faute, conduite exemplaire !', 36, y); }
+    else list.slice(0, 11).forEach((f, i) => {
+      g.fillStyle = f.elim ? '#ff6b6b' : f.forgiven ? '#8fa3c7' : '#ffc860';
+      const t = `${i + 1}. ${f.label}${f.pts ? ` (−${f.pts})` : ''}`;
+      g.fillText(t.length > 46 ? t.slice(0, 45) + '…' : t, 36, y); y += 30;
+    });
+    if (r.city) drawMap(g, 580, 60, 420, r.city, r.trace || [], r.faults || []);
+    g.textAlign = 'center'; g.fillStyle = '#7fb0ff'; g.font = '700 26px Inter, Arial'; g.fillText(r.hint, W / 2, 548); g.textAlign = 'left';
   }
   arrow(g, turn) {
     g.fillStyle = '#2f6bff'; g.beginPath(); g.arc(0, 0, 110, 0, 7); g.fill();
