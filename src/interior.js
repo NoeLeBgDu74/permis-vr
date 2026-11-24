@@ -110,7 +110,7 @@ export function buildInterior(car) {
   hood.rotateX(Math.PI / 2); hood.rotateZ(Math.PI / 2);
   const hm = mesh(hood, M.dash, [CLUSTER.pos.x, 0.94, 0.565], null, root); hm.material = M.dash.clone(); hm.material.side = THREE.DoubleSide;
   // fond du combiné
-  mesh(rb(0.36, 0.16, 0.04, 0.02), M.piano, [CLUSTER.pos.x, 0.985, 0.53], [-0.3, 0, 0], root);
+  mesh(rb(0.36, 0.16, 0.02, 0.008), M.piano, [CLUSTER.pos.x, 0.977, 0.522], [0.18, 0, 0], root);
   // aérateurs (lamelles)
   const vent = (x, y, z, w) => {
     const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.x = -0.1; root.add(g);
