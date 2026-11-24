@@ -103,7 +103,7 @@ export class Voice {
       rec.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) this.srText += e.results[i][0].transcript + ' '; };
       rec.onerror = () => { };
       try { rec.start(); } catch (e) { }
-      return;
+      return true;
     }
     try {
       this.stream = this.stream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
@@ -112,7 +112,13 @@ export class Voice {
       const mr = this.mr = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
       mr.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
       mr.start();
-    } catch (e) { this.recording = false; this.status = 'Micro indisponible (autorise le micro).'; }
+    } catch (e) { this.recording = false; this.micError = (e && e.name === 'NotAllowedError') ? 'Micro refusé : autorise le micro pour ce site' : 'Micro indisponible sur cet appareil'; return false; }
+    this.micError = null; return true;
+  }
+  // demande l'autorisation du micro à l'avance (bouton du menu)
+  async enableMic() {
+    try { this.stream = this.stream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); this.micError = null; return true; }
+    catch (e) { this.micError = (e && e.name === 'NotAllowedError') ? 'Micro refusé : autorise le micro pour ce site' : 'Micro indisponible sur cet appareil'; return false; }
   }
   // renvoie le texte entendu (ou '')
   async endTalk() {
@@ -127,14 +133,15 @@ export class Voice {
     const mr = this.mr; this.mr = null;
     await new Promise(res => { mr.onstop = res; try { mr.stop(); } catch (e) { res(); } });
     const blob = new Blob(this.chunks, { type: this.mime || 'audio/webm' });
-    if (blob.size < 2500) return '';
+    if (blob.size < 2500) { this.lastError = 'Trop court : maintiens le bouton pendant que tu parles'; return ''; }
     this.status = '…';
     try {
       const b64 = await blobToB64(blob);
       const r = await fetch(RELAY + '/api/stt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audio: b64, mime: blob.type }) });
       const j = await r.json();
+      if (!r.ok) this.lastError = 'Transcription impossible (' + r.status + ')';
       return (j.text || '').trim();
-    } catch (e) { return ''; }
+    } catch (e) { this.lastError = 'Pas de connexion internet pour la transcription'; return ''; }
   }
 
   // ---------- cerveau de l'inspecteur ----------

@@ -49,7 +49,7 @@ export class Exam {
   speak(text, voice = true) { this.say = text; this.sayT = this.t; if (voice) this.audio.say(text); }
 
   begin() {
-    if (this.mode === 'exam') this.speak('Bonjour, je suis votre inspecteur. Mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
+    if (this.mode === 'exam') this.speak('Bonjour, je suis votre inspecteur. Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
     else this.speak('Conduite libre : roulez où vous voulez. Je vous signale les erreurs pour vous entraîner.');
   }
 
@@ -327,7 +327,7 @@ export class Exam {
     const pen = this.faults.reduce((s, f) => s + f.pts, 0);
     const info = { title, timer: this.mode === 'exam' ? `${31 - pen}/31` : '', faults: this.faults, say: this.t - this.sayT < 9 ? this.say : '' };
     if (this.result) { info.result = this.result; return info; }
-    if (this.state === 'start' && this.mode === 'exam') info.instruction = { turn: 'go', text: 'Démarrez : D, clignotant gauche, angle mort' };
+    if (this.state === 'start' && this.mode === 'exam') info.instruction = { turn: 'go', text: 'D, frein à main desserré, clignotant gauche, angle mort' };
     else if (this.state === 'creneau') info.instruction = { turn: 'park', text: 'Créneau à droite, en marche arrière' };
     else if (this.instr && this.approach) info.instruction = { turn: this.instr.turn, text: turnText(this.instr.n, this.instr.turn).replace(/^./, c => c.toUpperCase()), dist: Math.max(0, Math.round(this.approach.dist - RW)) + ' m' };
     return info;

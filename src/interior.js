@@ -176,7 +176,7 @@ export function buildInterior(car) {
   mesh(rb(0.03, 0.01, 0.03, 0.004), M.alu, [0, 0.178, 0], null, stick);
   api.gearStick = stick;
   // frein à main
-  const hb = mesh(rb(0.035, 0.03, 0.24, 0.012), M.dash, [0, 0.63, -0.18], [0.18, 0, 0], root);
+  const hb = mesh(rb(0.035, 0.03, 0.24, 0.012), M.dash, [0, 0.63, -0.18], [0.18, 0, 0], root); api.hb = hb;
   mesh(rb(0.038, 0.034, 0.08, 0.014), M.leather, [0, 0.005, -0.08], null, hb);
   // porte-gobelets + accoudoir
   for (const z of [0.36, 0.44]) mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.005, 24), M.rubber, [0, 0.592, z], null, root);
@@ -265,11 +265,15 @@ export function buildInterior(car) {
   car.obj.add(root);
 
   // ---------- animation ----------
+  // points de préhension (repère voiture)
+  api.leverKnob = () => new THREE.Vector3(0, 0.73, 0.18 + api.gearStick.position.z);
+  api.hbHandle = () => new THREE.Vector3(0, 0.66 + (api.hb.rotation.x - 0.18) * 0.12, -0.27);
   api.update = (st) => {
+    api.hb.rotation.x = st.handbrake ? 0.5 : 0.18;
     api.brakePedal.rotation.x = -st.brake * 0.35;
     api.gasPedal.rotation.x = -st.throttle * 0.3;
     api.blinkStalk.rotation.z = st.blink === 'L' ? -0.12 : st.blink === 'R' ? 0.12 : 0;
-    api.gearStick.position.z = { P: 0.045, R: 0.015, N: -0.015, D: -0.045 }[st.gear] || 0;
+    api.gearStick.position.z = st.leverZ !== undefined ? st.leverZ : ({ P: 0.045, R: 0.015, N: -0.015, D: -0.045 }[st.gear] || 0);
   };
   return api;
 }

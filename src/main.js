@@ -46,6 +46,12 @@ $('vrExam').onclick = () => launch('exam', true);
 $('vrFree').onclick = () => launch('free', true);
 $('pcExam').onclick = () => launch('exam', false);
 $('pcFree').onclick = () => launch('free', false);
+$('micBtn').onclick = async () => {
+  const ok = await voice.enableMic();
+  $('micBtn').textContent = ok ? '🎙️ Micro activé ✓' : '🎙️ ' + voice.micError;
+  $('micBtn').disabled = ok;
+};
+if (navigator.permissions) navigator.permissions.query({ name: 'microphone' }).then(p => { if (p.state === 'granted') { $('micBtn').textContent = '🎙️ Micro activé ✓'; $('micBtn').disabled = true; } }).catch(() => { });
 
 async function launch(mode, vr) {
   audio.start(); voice.initNeural();
@@ -125,6 +131,12 @@ function makeSchoolSign(car) {
   return s;
 }
 
+// vibration d'une manette (0 = gauche, 1 = droite)
+function pulse(k, intensity, ms) {
+  const s = renderer.xr.getSession(); if (!s) return;
+  for (const src of s.inputSources) if (src.handedness === (k ? 'right' : 'left') && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]) { try { src.gamepad.hapticActuators[0].pulse(intensity, ms); } catch (e) { } }
+}
+
 // ---------- recentrage VR : place la tête du joueur à la place conducteur ----------
 function recenter() {
   const xrCam = renderer.xr.getCamera();
@@ -156,11 +168,12 @@ function loop() {
   if (exam.state === 'done' && (inp.events.has('free') || (xr && inp.events.has('horn')))) { startGame('free'); return; }
   if (inp.events.has('restart') && exam.mode === 'free') { startGame('free'); return; }
   if (inp.events.has('menu')) { location.href = location.pathname; return; }
-  if (inp.events.has('gear')) {
-    if (kmh < 3) { phys.gear = phys.gear === 'D' ? 'R' : 'D'; audio.click(true); }
-  }
+  const setGear = (g) => { if (g === phys.gear) return; if (g === 'P' && kmh > 2) return; if ((g === 'R' && phys.v > 1.5) || (g === 'D' && phys.v < -1.5)) return; phys.gear = g; audio.click(true); pulse(0, 0.5, 30); pulse(1, 0.5, 30); };
+  if (inp.events.has('gear')) setGear(phys.gear === 'R' ? 'D' : 'R');
+  if (inp.events.has('gearN')) setGear('N');
+  if (inp.events.has('handbrake')) { phys.handbrake = !phys.handbrake; audio.click(false); }
   // accélérer en P : passe tout seul en D (boîte automatique)
-  if (phys.gear === 'P' && inp.throttle > 0.3) { phys.gear = 'D'; audio.click(true); }
+  if (phys.gear === 'P' && inp.throttle > 0.3 && !G.leverHeld) { phys.gear = 'D'; audio.click(true); }
   if (inp.events.has('park') && kmh < 2) { phys.gear = 'P'; audio.click(true); }
   if (inp.events.has('blinkL')) { G.blink = G.blink === 'L' ? null : 'L'; G.blinkPeak = 0; G.blinkT = 0; }
   if (inp.events.has('blinkR')) { G.blink = G.blink === 'R' ? null : 'R'; G.blinkPeak = 0; G.blinkT = 0; }
@@ -168,11 +181,26 @@ function loop() {
   if (inp.events.has('recenter')) { if (xr) recenter(); else input.look.yaw = input.look.pitch = 0; }
 
   // ----- parler à l'inspecteur (T maintenu / joystick droit vers l'avant) -----
-  if (inp.talk && !G.talking) { G.talking = true; voice.startTalk(); }
+  const ask = async (text) => {
+    exam.heard = text;
+    const reply = await voice.answer(text, examContext(G));
+    exam.speak(reply, false); voice.say(reply, true);
+  };
+  if (inp.talk && !G.talking) {
+    G.talking = true; voice.lastError = null;
+    voice.startTalk().then(ok => {
+      if (ok !== false || xr) return;
+      // PC sans micro : on écrit sa question
+      G.talking = false; input.keys.clear();
+      const q = prompt((voice.micError || 'Micro indisponible') + '.\nÉcris ta question à l\'inspecteur :');
+      input.keys.clear(); clock.getDelta();
+      if (q && q.trim()) ask(q.trim());
+    });
+  }
   if (!inp.talk && G.talking) {
     G.talking = false;
     voice.endTalk().then(async (text) => {
-      if (!text) { exam.speak('Je ne vous ai pas entendu. Maintenez le bouton pendant que vous parlez.', false); return; }
+      if (!text) { exam.speak(voice.micError || voice.lastError || 'Je ne vous ai pas entendu. Maintenez le bouton pendant que vous parlez.', false); return; }
       exam.heard = text;
       const reply = await voice.answer(text, examContext(G));
       exam.speak(reply, false); voice.say(reply, true);
@@ -188,6 +216,33 @@ function loop() {
     if (!st) continue;
     g.getWorldPosition(tmpV);
     handStates[k] = { pos: tmpV.clone(), grip: st.grip };
+  }
+  // ----- mains sur le levier de vitesses / le frein à main -----
+  G.handGrab = G.handGrab || [null, null]; G.leverHeld = false; G.leverZ = undefined;
+  const ORDER = ['P', 'R', 'N', 'D'];
+  for (let k = 0; k < 2; k++) {
+    const h = handStates[k];
+    if (!h || !h.grip) { G.handGrab[k] = null; continue; }
+    const lp = h.pos.clone().applyMatrix4(car.obj.matrixWorld.clone().invert());
+    if (!G.handGrab[k]) {
+      if (lp.distanceTo(G.interior.leverKnob()) < 0.14) G.handGrab[k] = { type: 'lever', z0: lp.z, g0: ORDER.indexOf(phys.gear) };
+      else if (lp.distanceTo(G.interior.hbHandle()) < 0.14) G.handGrab[k] = { type: 'hb', y0: lp.y };
+      else G.handGrab[k] = { type: 'wheel' };
+      if (G.handGrab[k].type !== 'wheel') pulse(k, 0.3, 25);
+    }
+    const gr = G.handGrab[k];
+    if (gr.type === 'lever') {
+      const dz = THREE.MathUtils.clamp(lp.z - gr.z0, -0.12, 0.12);
+      const idx = THREE.MathUtils.clamp(Math.round(gr.g0 - dz / 0.03), 0, 3);
+      setGear(ORDER[idx]);
+      G.leverHeld = true; G.leverZ = THREE.MathUtils.clamp(({ P: 0.045, R: 0.015, N: -0.015, D: -0.045 })[ORDER[gr.g0]] + dz, -0.05, 0.05);
+      handStates[k] = null;
+    } else if (gr.type === 'hb') {
+      const dy = lp.y - gr.y0;
+      if (dy > 0.05 && !phys.handbrake) { phys.handbrake = true; audio.click(false); pulse(k, 0.8, 60); }
+      if (dy < -0.04 && phys.handbrake) { phys.handbrake = false; audio.click(true); pulse(k, 0.6, 40); }
+      handStates[k] = null;
+    }
   }
   const wheel = cockpit.updateWheel(dt, handStates, inp.steer, kmh);
 
@@ -207,7 +262,7 @@ function loop() {
   phys.blinkOn = G.blink && G.blinkPhase;
   phys.apply();
   if (G.inspector) G.inspector.update(dt, { speaking: voice.speaking, turn: exam.instr && exam.approach && exam.approach.dist < 45 && exam.instr.turn !== 'straight' ? exam.instr.turn : null });
-  G.interior.update({ brake: inp.brake, throttle: inp.throttle, blink: G.blink, gear: phys.gear });
+  G.interior.update({ brake: inp.brake, throttle: inp.throttle, blink: G.blink, gear: phys.gear, handbrake: phys.handbrake, leverZ: G.leverHeld ? G.leverZ : undefined });
   car.obj.updateMatrixWorld(true);
 
   // ----- monde -----
@@ -241,7 +296,7 @@ function loop() {
   G.clT -= dt; G.scrT -= dt;
   if (G.clT <= 0) {
     G.clT = 0.1;
-    cockpit.drawCluster({ rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase, warn: G.mode === 'exam' && exam.state === 'drive' ? '' : '' });
+    cockpit.drawCluster({ handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase, warn: G.mode === 'exam' && exam.state === 'drive' ? '' : '' });
   }
   if (G.scrT <= 0) {
     G.scrT = 0.25;

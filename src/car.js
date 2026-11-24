@@ -153,7 +153,7 @@ export class Physics {
     this.L = car.tpl.wheelbase || 2.5;
     this.x = 0; this.z = 0; this.yaw = 0;   // yaw : 0 = avant vers +z
     this.v = 0; this.steer = 0; this.wheelAngle = 0;
-    this.gear = 'P'; this.rpm = 800; this.spin = 0;
+    this.gear = 'P'; this.handbrake = true; this.rpm = 800; this.spin = 0;
     this.pitch = 0; this.roll = 0; this.accel = 0;
   }
   forward() { return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
@@ -170,11 +170,11 @@ export class Physics {
       const sp = v * sgn;
       // traction (couple qui baisse avec la vitesse) + rampage au ralenti (≈ 6 km/h)
       let drive = thr * 3.4 * Math.max(0, 1 - sp / top) * (sp < 8 ? 1 : 8 / sp * 0.6 + 0.4);
-      if (thr < 0.02 && brk < 0.02 && sp < 1.7) drive += (1.7 - sp) * 1.2;
       a += drive * sgn;
     }
     // freins, résistance au roulement, traînée
-    const decel = brk * 8.5 + 0.18 + 0.0009 * v * v + (this.gear === 'P' ? 12 : 0) + ((this.gear === 'D' || this.gear === 'R') && thr < 0.02 ? 0.35 : 0);
+    if (this.handbrake) a *= 0.12;
+    const decel = brk * 8.5 + (this.handbrake ? 9 : 0) + 0.18 + 0.0009 * v * v + (this.gear === 'P' ? 12 : 0) + ((this.gear === 'D' || this.gear === 'R') && thr < 0.02 ? 0.35 : 0);
     if (Math.abs(this.v) < 0.05 && Math.abs(a) < decel) { this.v = 0; a = 0; }
     else { a -= Math.sign(this.v || a) * decel; }
     const nv = this.v + a * dt;

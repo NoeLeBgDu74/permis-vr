@@ -124,6 +124,7 @@ export class Cockpit {
     g.font = '800 34px Inter, Arial';
     ['P', 'R', 'N', 'D'].forEach((k, i) => { g.fillStyle = st.gear === k ? '#ffffff' : '#344058'; g.fillText(k, 461 + i * 34, 300); });
     if (st.limit) { g.beginPath(); g.arc(512, 245, 26, 0, 7); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 6; g.strokeStyle = '#d0142c'; g.stroke(); g.fillStyle = '#111'; g.font = '800 22px Inter, Arial'; g.fillText(String(st.limit), 512, 246); }
+    if (st.handbrake) { g.strokeStyle = '#ff3030'; g.lineWidth = 5; g.beginPath(); g.arc(512, 104, 22, 0, 7); g.stroke(); g.fillStyle = '#ff3030'; g.font = '800 26px Inter, Arial'; g.fillText('P', 512, 106); g.font = '600 15px Inter, Arial'; g.fillText('FREIN À MAIN', 512, 138); }
     const on = st.blinkPhase;
     g.fillStyle = st.blink === 'L' && on ? '#28e070' : '#14201a'; tri(g, 450, 36, -1);
     g.fillStyle = st.blink === 'R' && on ? '#28e070' : '#14201a'; tri(g, 574, 36, 1);
@@ -194,7 +195,7 @@ export class Cockpit {
       const pl = h.pos.clone().applyMatrix4(inv);
       const q = angOf(pl);
       if (h.grip && !this.grab[k]) {
-        if (Math.abs(q.r - R) < 0.11 && Math.abs(q.z) < 0.14) this.grab[k] = { last: q.a };
+        if (q.r > 0.03 && q.r < R + 0.22 && Math.abs(q.z) < 0.3) this.grab[k] = { last: q.a };
       } else if (!h.grip) this.grab[k] = null;
       if (this.grab[k]) {
         let d = q.a - this.grab[k].last; d = Math.atan2(Math.sin(d), Math.cos(d));
