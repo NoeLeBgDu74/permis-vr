@@ -10,7 +10,7 @@ const rightOf = (d) => ({ x: -d.dz, z: d.dx });
 function rand(a, b) { return a + Math.random() * (b - a); }
 
 export class Traffic {
-  constructor(scene, city) { this.scene = scene; this.city = city; this.cars = []; this.peds = []; this.parked = []; this.player = null; }
+  constructor(scene, city) { this.scene = scene; this.city = city; this.cars = []; this.peds = []; this.parked = []; this.player = null; this.honks = []; }
 
   async init(count, avoid) {
     const ids = ['milano95', 'sigil07', 'asti89', 'fairheaven80', 'ace11'];
@@ -27,7 +27,9 @@ export class Traffic {
       if (taken.some(t => t.key === key && Math.abs(t.s - s) < 14)) continue;
       const tpl = tpls[Math.floor(Math.random() * tpls.length)];
       const car = makeCar(tpl, PAINTS[Math.floor(Math.random() * PAINTS.length)]);
-      const a = { car, from, d: axisDir.k, s, v: 6, phase: 'seg', len: tpl.size.z, half: tpl.size.x / 2, pace: rand(0.85, 1.04), wait: 0, cleared: false, stopped: 0, spin: 0 };
+      const fou = this.cars.length % 5 === 2;   // ≈ 1 voiture sur 5 : un chauffard
+      const a = { car, from, d: axisDir.k, s, v: 6, phase: 'seg', len: tpl.size.z, half: tpl.size.x / 2, pace: fou ? rand(1.35, 1.6) : rand(0.85, 1.04), fou, wait: 0, cleared: false, stopped: 0, spin: 0, honkT: 0 };
+      if (fou && car.paint) car.paint.color.set(['#101114', '#8a1c1c', '#e0c341', '#1d3c78'][this.cars.length % 4]);
       this.planNext(a);
       this.place(a);
       if (avoid && Math.hypot(a.x - avoid.x, a.z - avoid.z) < 45) { continue; }
@@ -54,7 +56,7 @@ export class Traffic {
     for (const t of ['straight', 'straight', 'left', 'right']) { const nd = dirOf(turnDir(a.d, t)); if (this.city.node(B.i + nd.dx, B.j + nd.dz)) opts.push(t); }
     a.turn = opts.length ? opts[Math.floor(Math.random() * opts.length)] : 'uturn';
     a.nd = a.turn === 'uturn' ? DIRS.find(x => { const D = dirOf(a.d); return x.dx === -D.dx && x.dz === -D.dz; }).k : turnDir(a.d, a.turn);
-    a.cleared = false; a.wait = 0; a.stopped = 0;
+    a.cleared = false; a.wait = 0; a.stopped = 0; a.dare = a.fou && Math.random() < 0.55; // ce chauffard grillera-t-il le prochain feu / stop ?
   }
   // point de voie (droite) à la distance s depuis la sortie du nœud `from`
   lanePoint(n, dk, s) {
@@ -160,16 +162,17 @@ export class Traffic {
           let go = true;
           if (ctl === 'light') {
             const st = city.lightState(B, axis);
-            if (st === 'R') go = false;
+            if (st === 'R') go = !!(a.dare && toLine < 30);
             else if (st === 'O') go = toLine < a.v * a.v / 6 + 1;
           } else if (ctl === 'stop') {
             if (a.stopped < 1.0) go = false;
+            if (a.dare) { a.stopped = 1; }                          // stop « glissé »
             if (toLine < 1.6 && Math.abs(a.v) < 0.25) a.stopped += dt;
             if (a.stopped >= 1.0) go = this.clearFor(a, B, axis, 'minor', bodies);
           } else if (ctl === 'yield') {
             if (toLine < 12) go = this.clearFor(a, B, axis, 'minor', bodies);
           } else if (ctl === 'right') {
-            if (toLine < 14) go = this.clearFor(a, B, axis, 'right', bodies);
+            if (toLine < 14) go = a.dare || this.clearFor(a, B, axis, 'right', bodies);
           } else if (ctl === 'round') {
             if (toLine < 14) go = this.clearRound(a, B, bodies) || a.wait > 9;
           }
@@ -189,15 +192,18 @@ export class Traffic {
         const bf = Math.sin(b.yaw) * fx + Math.cos(b.yaw) * fz;
         if (l > (a.phase === 'turn' ? 2.3 : 1.7) + (bf < 0.5 ? 0.6 : 0)) continue;
         const gap = f - (a.len + b.len) / 2;
-        if (gap < lead) { lead = gap; leadV = b.v * Math.max(0, bf); }
+        if (gap < lead) { lead = gap; leadV = b.v * Math.max(0, bf); a.leadIsPlayer = !b.ai; }
       }
       for (const p of this.peds) { // piétons devant (sécurité)
         if (!p.onRoad) continue;
         const rx = p.x - a.x, rz = p.z - a.z, f = rx * fx + rz * fz; if (f <= 0 || f > 20) continue;
         if (Math.abs(rx * fz - rz * fx) < 1.8) { const gap = f - a.len / 2 - 0.6; if (gap < lead) { lead = gap; leadV = 0; } }
       }
+      // le chauffard klaxonne s'il est bloqué derrière le joueur
+      if (a.fou && a.leadIsPlayer && lead < 9 && a.v < 3) { a.honkT += dt; if (a.honkT > 1.5) { a.honkT = -4; this.honks.push({ x: a.x, z: a.z, fou: true }); } } else if (a.honkT > 0) a.honkT = 0; else a.honkT += dt;
+      a.leadIsPlayer = false;
       // IDM
-      const amax = 1.6, bc = 2.4, T = 1.3, s0 = 2.2;
+      const amax = a.fou ? 3 : 1.6, bc = 2.4, T = a.fou ? 0.6 : 1.3, s0 = a.fou ? 1.0 : 2.2;
       let acc = amax * (1 - Math.pow(Math.max(0, a.v) / Math.max(0.5, v0), 4));
       const idm = (gap, vl) => { const ss = s0 + Math.max(0, a.v * T + a.v * (a.v - vl) / (2 * Math.sqrt(amax * bc))); return -amax * (ss / Math.max(0.2, gap)) ** 2; };
       if (lead < 60) acc += idm(lead, leadV);

@@ -44,6 +44,16 @@ export class Audio {
     this.road.gain.setTargetAtTime(this.muted ? 0 : Math.min(0.5, kmh / 130), t, 0.2);
     this.horn.gain.setTargetAtTime(hornOn && !this.muted ? 0.16 : 0, t, 0.02);
   }
+  // klaxon d'un autre véhicule (volume selon la distance)
+  honk(dist) {
+    if (!this.ctx || this.muted) return;
+    const C = this.ctx, t = C.currentTime, g = C.createGain(), v = Math.max(0.02, 0.22 * (1 - dist / 60));
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.02);
+    g.gain.setValueAtTime(v, t + 0.22); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    g.gain.setValueAtTime(0.0001, t + 0.36); g.gain.exponentialRampToValueAtTime(v, t + 0.38); g.gain.setValueAtTime(v, t + 0.8); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    for (const f of [370, 466]) { const o = C.createOscillator(); o.type = 'square'; o.frequency.value = f; const bp = C.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 800; o.connect(bp); bp.connect(g); o.start(t); o.stop(t + 0.95); }
+    g.connect(this.master);
+  }
   click(hi) {
     if (!this.ctx || this.muted) return;
     const C = this.ctx, o = C.createOscillator(), g = C.createGain();

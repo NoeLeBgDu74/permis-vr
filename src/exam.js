@@ -118,6 +118,12 @@ export class Exam {
   update(dt, car, ctl, blink) {
     this.t += dt;
     if (blink) this.blinkSeen[blink] = this.t;
+    // un chauffard passe à toute vitesse près de nous ?
+    if (this.state !== 'done') for (const a of [...this.traffic.cars, ...(this.hw ? this.hw.cars : [])]) {
+      if (!a.fou) continue;
+      const d = Math.hypot(a.x - car.x, a.z - car.z);
+      if (d < 22 && a.v > 15) { this.react('fou'); break; }
+    }
     // bavardage selon l'humeur (seulement quand tout est calme)
     if (this.mood.chat && this.state === 'drive' && this.mood.chatLines.length) {
       this.chatT -= dt;
@@ -302,6 +308,19 @@ export class Exam {
       this.freeSlotT = (this.freeSlotT || 0) + dt;
       if (this.freeSlotT > 1.5 && !this.freeSlotDone) { this.freeSlotDone = true; this.speak('Joli créneau ! Vous êtes parfaitement garé.'); this.audio.beep('ok'); }
     } else { this.freeSlotT = 0; if (!inSlot) this.freeSlotDone = false; }
+  }
+
+  // réactions aux autres usagers
+  react(kind) {
+    if (this.t - (this.reactT || -99) < 15) return;
+    this.reactT = this.t;
+    const L = {
+      honk: ['Ne vous laissez pas impressionner par le klaxon, vous faites bien.', 'Il klaxonne… laissez-le faire, restez calme.', 'Oh, celui-là, toujours pressé !'],
+      fou: ['Et bien ! Il y en a qui sont pressés…', 'Regardez-moi ce chauffard. Ne faites jamais ça.', 'Lui, il ne passerait pas le permis aujourd\'hui !', 'Quel fou ! Restez bien concentré, il y en a toujours un.'],
+      red: ['Vous avez vu ? Il a grillé le feu rouge ! Toujours anticiper les autres.', 'Incroyable, en plein rouge…'],
+      victim: ['Aïe ! Ce n\'est pas votre faute, ce chauffard nous est rentré dedans. Je ne le compte pas.', 'Oh le fou ! Ne vous inquiétez pas, vous n\'y êtes pour rien.'],
+    }[kind];
+    if (L) this.speak(pick(L));
   }
 
   // fin de la partie « ville » : créneau (permis B) ou arrêt au bord (autres catégories)

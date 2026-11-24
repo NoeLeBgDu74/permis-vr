@@ -204,7 +204,9 @@ export class Highway {
       const tpl = tpls[Math.floor(Math.random() * tpls.length)];
       const car = makeCar(tpl, PAINTS[Math.floor(Math.random() * PAINTS.length)]);
       const cw = i % 2 ? 'in' : 'out';
-      const a = { car, cw, s: (i / n) * PER + Math.random() * 40, lane: Math.random() < 0.65 ? 1 : 0, u: 0, v: 30, v0: (110 + Math.random() * 25) / 3.6, len: tpl.size.z, half: tpl.size.x / 2, spin: 0, laneT: 0 };
+      const fou = i % 6 === 3;
+      const a = { car, cw, fou, s: (i / n) * PER + Math.random() * 40, lane: Math.random() < 0.65 ? 1 : 0, u: 0, v: 30, v0: (fou ? 160 + Math.random() * 25 : 110 + Math.random() * 25) / 3.6, len: tpl.size.z, half: tpl.size.x / 2, spin: 0, laneT: 0 };
+      if (fou && car.paint) car.paint.color.set('#101114');
       a.uTarget = a.lane ? U.lane2 : U.lane1; a.ucur = a.uTarget;
       this.scene.add(car.obj); this.cars.push(a);
     }
@@ -230,13 +232,13 @@ export class Highway {
       a.laneT -= dt;
       if (a.laneT <= 0) {
         const want = a.lane === 1 ? (gap < 60 && lv < a.v0 * vmaxK - 3 ? 0 : 1) : (this.laneFree(a, 1, P) ? 1 : 0);
-        if (want !== a.lane && this.laneFree(a, want, P)) { a.lane = want; a.laneT = 4; }
+        if (want !== a.lane && this.laneFree(a, want, P)) { a.lane = want; a.laneT = a.fou ? 1.2 : 4; }
         else a.laneT = 0.6;
       }
       a.uTarget = a.lane ? U.lane2 : U.lane1;
-      a.ucur += Math.sign(a.uTarget - a.ucur) * Math.min(Math.abs(a.uTarget - a.ucur), dt * 1.2);
+      a.ucur += Math.sign(a.uTarget - a.ucur) * Math.min(Math.abs(a.uTarget - a.ucur), dt * (a.fou ? 2.6 : 1.2));
       // IDM
-      const v0 = a.v0 * vmaxK, am = 1.4, bc = 2.5, T = 1.5, s0 = 4;
+      const v0 = a.v0 * (a.fou ? 1 : vmaxK), am = a.fou ? 2.6 : 1.4, bc = 2.5, T = a.fou ? 0.55 : 1.5, s0 = a.fou ? 2 : 4;
       let acc = am * (1 - Math.pow(a.v / v0, 4));
       if (gap < 1e8) { const ss = s0 + Math.max(0, a.v * T + a.v * (a.v - lv) / (2 * Math.sqrt(am * bc))); acc -= am * (ss / Math.max(0.5, gap)) ** 2; }
       a.v = Math.max(0, a.v + Math.max(-8, acc) * dt);
@@ -253,12 +255,14 @@ export class Highway {
   }
   laneFree(a, lane, P) {
     const uT = lane ? U.lane2 : U.lane1, dir = a.cw === 'in' ? 1 : -1;
-    const check = (s, u) => { const d = ((s - a.s) * dir + PER) % PER, dd = d > PER / 2 ? d - PER : d; return Math.abs(Math.abs(u) - uT) < 1.8 && dd > -25 && dd < 45; };
+    const back = a.fou ? -9 : -25, front = a.fou ? 18 : 45;
+    const check = (s, u) => { const d = ((s - a.s) * dir + PER) % PER, dd = d > PER / 2 ? d - PER : d; return Math.abs(Math.abs(u) - uT) < 1.8 && dd > back && dd < front; };
     for (const b of this.cars) if (b !== a && b.cw === a.cw && check(b.s, b.ucur)) return false;
     if (P && P.cw === a.cw && check(P.s, Math.abs(P.u))) return false;
     return true;
   }
   bodies() { return this.cars.map(a => ({ x: a.x, z: a.z, yaw: a.yaw, v: a.v, len: a.len, half: a.half })); }
+  // le chauffard qui zigzague change aussi de voie sans raison
 }
 
 // retourne les triangles dont la face regarde vers le bas (pour qu'ils soient visibles du dessus)

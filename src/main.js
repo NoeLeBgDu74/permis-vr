@@ -287,6 +287,7 @@ function loop() {
   if (world.rain) world.rain.update(dt, car.obj.position);
   if (G.windshield) { if (inp.events.has('wipers')) G.windshield.on = !G.windshield.on; G.windshield.update(dt, kmh, true); }
   world.traffic.update(dt, { x: phys.x, z: phys.z, yaw: phys.yaw, v: phys.v, len: car.tpl.size.z, half: car.tpl.size.x / 2 });
+  for (const h of world.traffic.honks.splice(0)) { const d = Math.hypot(h.x - phys.x, h.z - phys.z); if (d < 60) { audio.honk(d); if (d < 15) exam.react('honk'); } }
   world.hw.updateTraffic(dt, { x: phys.x, z: phys.z, v: phys.v, len: car.tpl.size.z }, world.rainy);
   // regard (repère voiture)
   camera.getWorldPosition(tmpV); camera.getWorldQuaternion(tmpQ);
@@ -395,6 +396,7 @@ function collide(G, px, pz, pyaw) {
     const ahx = a.half * (1 - dyaw) + a.len / 2 * dyaw, ahz = a.len / 2 * (1 - dyaw) + a.half * dyaw;
     if (Math.abs(lx) < hx + ahx - 0.15 && Math.abs(lz) < hz + ahz - 0.2) {
       phys.x = px; phys.z = pz; phys.yaw = pyaw;
+      if (a.fou && !(Math.abs(phys.v) > 3 && lz > 0)) { if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.reactT = -99; exam.react('victim'); } phys.v = 0; a.v = 0; return; }
       if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
       phys.v = 0; a.v = 0;
       return;
