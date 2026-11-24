@@ -1,0 +1,318 @@
+// PERMIS VR — passe ton permis en réalité virtuelle (Meta Quest 3, WebXR) ou sur PC.
+import * as THREE from 'three';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { City, N, RW, SW, SP, nodeX } from './city.js';
+import { setupEnv } from './env.js';
+import { loadCarTemplate, makeCar, Physics, carLOD } from './car.js';
+import { Cockpit, EYE } from './cockpit.js';
+import { buildInterior } from './interior.js';
+import { Traffic } from './traffic.js';
+import { Exam } from './exam.js';
+import { Input } from './input.js';
+import { Audio } from './audio.js';
+import { Voice } from './voice.js';
+import { setAnisotropy } from './assets.js';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.xr.enabled = true; renderer.xr.setReferenceSpaceType('local');
+setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.03, 3000);
+const audio = new Audio();
+const voice = new Voice(); audio.voice = voice;
+const input = new Input(renderer);
+
+let world = null;        // { city, env, traffic, quality }
+let game = null;         // partie en cours
+const params = new URLSearchParams(location.search);
+
+// ---------- menu ----------
+const qualSel = $('quality');
+try { const q = localStorage.getItem('pvr.quality'); if (q) qualSel.value = q; } catch (e) { }
+qualSel.onchange = () => { try { localStorage.setItem('pvr.quality', qualSel.value); } catch (e) { } };
+if (navigator.xr) navigator.xr.isSessionSupported('immersive-vr').then(ok => {
+  if (ok) { $('vrExam').disabled = false; $('vrFree').disabled = false; $('vrNote').textContent = 'Casque détecté : mets-le et choisis un mode VR.'; }
+  else $('vrNote').textContent = 'Pas de casque VR détecté : ouvre cette page dans le navigateur du Meta Quest 3 (connexion https requise).';
+}).catch(() => { });
+$('vrExam').onclick = () => launch('exam', true);
+$('vrFree').onclick = () => launch('free', true);
+$('pcExam').onclick = () => launch('exam', false);
+$('pcFree').onclick = () => launch('free', false);
+
+async function launch(mode, vr) {
+  audio.start();
+  let session = null;
+  if (vr) { // la session doit être demandée directement dans le geste de l'utilisateur
+    try {
+      session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking', 'layers'] });
+    } catch (e) { alert('Impossible de démarrer la VR : ' + e.message); return; }
+  }
+  $('menu').classList.add('hidden'); $('loading').classList.remove('hidden');
+  try { await ensureWorld(qualSel.value); await startGame(mode); }
+  catch (e) { console.error(e); $('loading').textContent = 'Erreur de chargement : ' + e.message; return; }
+  $('loading').classList.add('hidden');
+  if (session) {
+    renderer.xr.setFramebufferScaleFactor(world.quality === 'ultra' ? 1.25 : world.quality === 'medium' ? 0.85 : 1.0);
+    await renderer.xr.setSession(session);
+    renderer.xr.setFoveation(world.quality === 'ultra' ? 0.2 : 0.45);
+    game.needRecenter = 2;
+    session.addEventListener('end', () => { location.reload(); });
+  } else { $('hud').classList.remove('hidden'); }
+}
+
+async function ensureWorld(quality) {
+  if (world) return;
+  if (quality === 'medium') { renderer.shadowMap.enabled = true; }
+  const env = await setupEnv(renderer, scene, quality);
+  const city = new City(scene); await city.build(quality);
+  const traffic = new Traffic(scene, city);
+  const tpl = await loadCarTemplate('ace11');
+  world = { env, city, traffic, quality, tpl };
+  // compile les shaders tout de suite (évite les saccades au premier regard)
+  renderer.compile(scene, camera);
+}
+
+// ---------- partie ----------
+async function startGame(mode) {
+  const { city, traffic, tpl } = world;
+  if (game) { scene.remove(game.car.obj); }
+  const car = makeCar(tpl, '#f4f4f2', { player: true });
+  scene.add(car.obj);
+  const phys = new Physics(car);
+  // départ : garé le long du trottoir droit, rue horizontale ligne 2, vers l'est
+  phys.x = nodeX(1) + RW + 28; phys.z = nodeX(2) + (RW - 1.05); phys.yaw = Math.PI / 2; phys.gear = 'P';
+  phys.apply();
+  const interior = buildInterior(car); car.steeringWheel = interior.wheelPivot;
+  const cockpit = new Cockpit(car, renderer, world.quality);
+  // plaque « auto-école » sur le toit
+  car.obj.add(makeSchoolSign(car));
+  // rig de tête : caméra + manettes, à la place conducteur
+  const rig = new THREE.Group(); rig.position.copy(EYE); car.obj.add(rig);
+  rig.add(camera); camera.position.set(0, 0, 0); camera.rotation.set(0, Math.PI, 0);
+  const hands = [];
+  const factory = new XRControllerModelFactory();
+  for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(factory.createControllerModel(grip));
+    const ctrl = renderer.xr.getController(i);
+    ctrl.addEventListener('connected', (e) => { grip.userData.hand = e.data.handedness; });
+    rig.add(grip, ctrl); hands.push(grip);
+  }
+  if (!traffic.cars.length) await traffic.init(world.quality === 'medium' ? 14 : 20, { x: phys.x, z: phys.z });
+  else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
+  const exam = new Exam({ city, traffic, audio, mode });
+  game = { mode, car, phys, cockpit, interior, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  exam.begin();
+}
+
+function makeSchoolSign(car) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96; const g = c.getContext('2d');
+  g.fillStyle = '#1d4ed8'; g.fillRect(0, 0, 256, 96); g.fillStyle = '#fff'; g.font = '900 54px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('AUTO-ÉCOLE', 128, 50);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5 });
+  const s = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.2, 0.08), [m, m, new THREE.MeshStandardMaterial({ color: 0x1d4ed8 }), m, m, m]);
+  s.position.set(0, car.tpl.size.y + 0.1, -0.2);
+  s.castShadow = true;
+  return s;
+}
+
+// ---------- recentrage VR : place la tête du joueur à la place conducteur ----------
+function recenter() {
+  const xrCam = renderer.xr.getCamera();
+  const p = camera.position.clone(), q = camera.quaternion.clone();
+  const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+  const yaw = e.y;
+  game.rig.rotation.set(0, Math.PI - yaw, 0);
+  const rp = p.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI - yaw);
+  game.rig.position.copy(EYE).sub(rp);
+  void xrCam;
+}
+
+// ---------- boucle ----------
+const clock = new THREE.Clock();
+const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
+renderer.setAnimationLoop(loop);
+function loop() {
+  const dt = Math.min(0.05, clock.getDelta());
+  if (!game) { renderer.render(scene, camera); return; }
+  const G = game, { phys, cockpit, exam, car } = G;
+  const xr = renderer.xr.isPresenting;
+  const session = renderer.xr.getSession();
+  const inp = input.read(dt, session ? session.inputSources : null);
+  if (G.needRecenter > 0 && xr) { G.needRecenter--; if (G.needRecenter === 0) recenter(); }
+
+  // ----- événements -----
+  const kmh = Math.abs(phys.v) * 3.6;
+  if (exam.state === 'done' && exam.mode === 'exam' && (inp.events.has('restart') || (xr && inp.events.has('gear')))) { startGame('exam'); return; }
+  if (exam.state === 'done' && (inp.events.has('free') || (xr && inp.events.has('horn')))) { startGame('free'); return; }
+  if (inp.events.has('restart') && exam.mode === 'free') { startGame('free'); return; }
+  if (inp.events.has('menu')) { location.href = location.pathname; return; }
+  if (inp.events.has('gear')) {
+    if (kmh < 3) { phys.gear = phys.gear === 'D' ? 'R' : 'D'; audio.click(true); }
+  }
+  if (inp.events.has('park') && kmh < 2) { phys.gear = 'P'; audio.click(true); }
+  if (inp.events.has('blinkL')) { G.blink = G.blink === 'L' ? null : 'L'; G.blinkPeak = 0; G.blinkT = 0; }
+  if (inp.events.has('blinkR')) { G.blink = G.blink === 'R' ? null : 'R'; G.blinkPeak = 0; G.blinkT = 0; }
+  if (inp.events.has('cam') && !xr) G.cam = G.cam === 'in' ? 'out' : 'in';
+  if (inp.events.has('recenter')) { if (xr) recenter(); else input.look.yaw = input.look.pitch = 0; }
+
+  // ----- parler à l'inspecteur (T maintenu / joystick droit vers l'avant) -----
+  if (inp.talk && !G.talking) { G.talking = true; voice.startTalk(); }
+  if (!inp.talk && G.talking) {
+    G.talking = false;
+    voice.endTalk().then(async (text) => {
+      if (!text) { exam.speak('Je ne vous ai pas entendu. Maintenez le bouton pendant que vous parlez.', false); return; }
+      exam.heard = text;
+      const reply = await voice.answer(text, examContext(G));
+      exam.speak(reply, false); voice.say(reply, true);
+    });
+  }
+
+  // ----- volant -----
+  car.obj.updateMatrixWorld(true);
+  const handStates = [null, null];
+  if (xr) for (const g of G.hands) {
+    const hnd = g.userData.hand; if (!hnd) continue;
+    const k = hnd === 'left' ? 0 : 1; const st = inp.hands[k];
+    if (!st) continue;
+    g.getWorldPosition(tmpV);
+    handStates[k] = { pos: tmpV.clone(), grip: st.grip };
+  }
+  const wheel = cockpit.updateWheel(dt, handStates, inp.steer, kmh);
+
+  // ----- physique -----
+  const prevX = phys.x, prevZ = phys.z, prevYaw = phys.yaw;
+  phys.step(dt, { throttle: inp.throttle, brake: inp.brake, wheel });
+  phys.brakeLight = inp.brake > 0.1 || phys.gear === 'P';
+  collide(G, prevX, prevZ, prevYaw);
+  // clignotants : tic-tac + annulation automatique au retour du volant
+  if (G.blink) {
+    G.blinkT += dt; const ph = (G.blinkT % 0.76) < 0.38;
+    if (ph !== G.blinkPhase) { G.blinkPhase = ph; audio.click(ph); }
+    const s = G.blink === 'L' ? wheel : -wheel;
+    G.blinkPeak = Math.max(G.blinkPeak, s);
+    if (G.blinkPeak > 2.2 && s < 0.6) G.blink = null;
+  } else G.blinkPhase = false;
+  phys.blinkOn = G.blink && G.blinkPhase;
+  phys.apply();
+  G.interior.update({ brake: inp.brake, throttle: inp.throttle, blink: G.blink, gear: phys.gear });
+  car.obj.updateMatrixWorld(true);
+
+  // ----- monde -----
+  world.city.update(dt);
+  world.traffic.update(dt, { x: phys.x, z: phys.z, yaw: phys.yaw, v: phys.v, len: car.tpl.size.z, half: car.tpl.size.x / 2 });
+  // regard (repère voiture)
+  camera.getWorldPosition(tmpV); camera.getWorldQuaternion(tmpQ);
+  const inv = car.obj.matrixWorld.clone().invert();
+  const headL = tmpV.clone().applyMatrix4(inv);
+  const dirW = new THREE.Vector3(0, 0, -1).applyQuaternion(tmpQ);
+  const carQ = car.obj.getWorldQuaternion(new THREE.Quaternion());
+  const dirL = dirW.applyQuaternion(carQ.invert());
+  exam.updateLook(headL, dirL, { center: cockpit.mirrorLocal('center'), left: cockpit.mirrorLocal('left'), right: cockpit.mirrorLocal('right') });
+  exam.update(dt, phys, inp, G.blink);
+  audio.update(phys.rpm, kmh, inp.throttle, inp.hornHeld);
+
+  // ----- caméra PC -----
+  if (!xr) {
+    if (G.cam === 'in') {
+      G.rig.position.copy(EYE); G.rig.rotation.set(0, 0, 0);
+      camera.position.set(0, 0, 0); camera.rotation.set(input.look.pitch, Math.PI + input.look.yaw, 0, 'YXZ');
+      camera.fov = 72;
+    } else {
+      G.rig.position.set(0, 2.6, -6.5); G.rig.rotation.set(0, 0, 0);
+      camera.position.set(0, 0, 0); camera.rotation.set(-0.2 + input.look.pitch * 0.5, Math.PI + input.look.yaw, 0, 'YXZ');
+    }
+    camera.updateProjectionMatrix();
+  }
+
+  // ----- écrans (rafraîchis à cadence réduite) -----
+  G.clT -= dt; G.scrT -= dt;
+  if (G.clT <= 0) {
+    G.clT = 0.1;
+    cockpit.drawCluster({ rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase, warn: G.mode === 'exam' && exam.state === 'drive' ? '' : '' });
+  }
+  if (G.scrT <= 0) {
+    G.scrT = 0.25;
+    const si = exam.screenInfo(phys); if (voice.recording) si.say = '🎙️ Je vous écoute… (relâchez pour envoyer)'; else if (voice.busy) si.say = "… (l'inspecteur réfléchit)"; else if (exam.heard && exam.t - exam.sayT < 9) si.say = 'Vous : ' + exam.heard + ' — ' + si.say;
+    cockpit.drawScreen(si); cockpit.scrTex.needsUpdate = true;
+    if (!xr) $('hud').innerHTML = `${Math.round(kmh)} km/h · ${phys.gear} · ${G.blink ? 'clignotant ' + (G.blink === 'L' ? 'gauche' : 'droit') : ''}<br>Clic maintenu : regarder · C : vue extérieure · Échap : menu`;
+  }
+
+  world.env.follow(car.obj.position);
+  G.frame++;
+  cockpit.renderMirrors(scene, G.frame);
+  renderer.render(scene, camera);
+}
+
+function examContext(G) {
+  const e = G.exam, p = G.phys;
+  const ins = e.instr ? { left: 'tourner à gauche', right: 'tourner à droite', straight: 'continuer tout droit' }[e.instr.turn] + ' au prochain carrefour' : (e.state === 'park' ? 'se garer à droite puis passer en P' : e.state === 'start' ? 'démarrer (D, clignotant gauche, angle mort)' : 'aucune');
+  return `mode ${e.mode === 'exam' ? 'examen' : 'conduite libre'} ; étape ${e.state} ; consigne : ${ins} ; vitesse ${Math.round(Math.abs(p.v) * 3.6)} km/h (limite ${e.limit || 50}) ; rapport ${p.gear} ; manœuvres réussies ${e.maneuvers}/${e.target === Infinity ? '-' : e.target} ; fautes : ${e.faults.map(f => f.label).join(', ') || 'aucune'}${e.state === 'done' && e.result ? ' ; résultat : ' + (e.result.ok ? 'admis' : 'ajourné') + ', ' + e.result.note : ''}.`;
+}
+
+// ---------- collisions du joueur ----------
+function collide(G, px, pz, pyaw) {
+  const { phys, exam } = G;
+  const city = world.city;
+  const t = exam.t;
+  const lim = (N - 1) / 2 * SP + RW + SW + 1.5;
+  let hit = false;
+  for (const [x, z] of phys.corners()) {
+    if (city.hitsSolid(x, z) || Math.abs(x) > lim || Math.abs(z) > lim) { hit = true; break; }
+  }
+  if (hit) {
+    phys.x = px; phys.z = pz; phys.yaw = pyaw;
+    if (Math.abs(phys.v) > 1.5 && t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+    phys.v = 0;
+    return;
+  }
+  // trottoir
+  let curb = false;
+  for (const [x, z] of phys.corners(-0.15)) if (city.onSidewalk(x, z)) { curb = true; break; }
+  if (curb) {
+    phys.v *= 0.96;
+    if (Math.abs(phys.v) > 0.8 && t - G.curbT > 6) { G.curbT = t; exam.fault('curb'); }
+  }
+  // autres voitures
+  const c = Math.cos(phys.yaw), s = Math.sin(phys.yaw);
+  const hx = phys.car.tpl.size.x / 2, hz = phys.car.tpl.size.z / 2;
+  for (const a of world.traffic.cars) {
+    const rx = a.x - phys.x, rz = a.z - phys.z;
+    if (rx * rx + rz * rz > 64) continue;
+    const lx = rx * c - rz * s, lz = rx * s + rz * c;
+    const dyaw = Math.abs(Math.sin(a.yaw - phys.yaw));
+    const ahx = a.half * (1 - dyaw) + a.len / 2 * dyaw, ahz = a.len / 2 * (1 - dyaw) + a.half * dyaw;
+    if (Math.abs(lx) < hx + ahx - 0.15 && Math.abs(lz) < hz + ahz - 0.2) {
+      phys.x = px; phys.z = pz; phys.yaw = pyaw;
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+      phys.v = 0; a.v = 0;
+      return;
+    }
+  }
+  for (const p of world.traffic.peds) {
+    const rx = p.x - phys.x, rz = p.z - phys.z;
+    const lx = rx * c - rz * s, lz = rx * s + rz * c;
+    if (Math.abs(lx) < hx + 0.3 && Math.abs(lz) < hz + 0.3 && Math.abs(phys.v) > 0.5) {
+      phys.v = 0; phys.x = px; phys.z = pz;
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+    }
+  }
+}
+
+addEventListener('resize', () => {
+  if (renderer.xr.isPresenting) return;
+  renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / Math.max(1, innerHeight); camera.updateProjectionMatrix();
+});
+// le volet d'aperçu peut démarrer avec une taille nulle
+setInterval(() => { if (!renderer.xr.isPresenting && (canvas.width === 0 || Math.abs(camera.aspect - innerWidth / Math.max(1, innerHeight)) > 0.01)) dispatchEvent(new Event('resize')); }, 1000);
+
+// lancement direct pour les tests : ?play=exam|free
+if (params.get('play')) launch(params.get('play'), false);
+window.__pvr = () => ({ game, world, THREE, camera, renderer });
