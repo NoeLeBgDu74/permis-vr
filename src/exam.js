@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { N, RW, LO, SP, RO, RC, nodeX, DIRS, dirOf, dirKey, turnOf, turnDir } from './city.js';
 import { roundClear } from './traffic.js';
 import { MOODS, randomMood, pick } from './moods.js';
+import { TALK, ELIM_END, FREE_ELIM, REACT } from './talk.js';
 import { at as hwAt, PER as HW_PER } from './highway.js';
 
 const FAULTS = {
@@ -59,7 +60,8 @@ export class Exam {
   speak(text, voice = true) { this.say = text; this.sayT = this.t; if (voice) this.audio.say(text); }
 
   begin() {
-    if (this.mode === 'exam') this.speak(pick(this.mood.hello) + ' Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
+    const veh = { B: '', C: ' Aujourd\'hui : permis poids lourd. Attention au gabarit dans les virages, prenez large.', D: ' Aujourd\'hui : permis transport en commun. Douceur, pensez à vos passagers.', A: ' Aujourd\'hui : permis moto. Je vous suis en voiture et je vous guide à la radio.' }[this.vclass] || '';
+    if (this.mode === 'exam') this.speak(pick(this.mood.hello) + veh + (this.vclass === 'A' ? ' Passez en D, clignotant gauche, contrôle de l\'angle mort, puis démarrez.' : ' Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.'));
     else this.speak('Conduite libre : roulez où vous voulez. Je vous signale les erreurs pour vous entraîner.');
   }
 
@@ -72,15 +74,20 @@ export class Exam {
     if (!F.elim && ['mirror', 'blind', 'blinkStart', 'blink', 'blinkExit'].includes(key) && Math.random() < this.mood.blindSpot) return;
     if (!F.elim && this.mode === 'exam' && Math.random() < this.mood.forgive && this.mood.forgiveLines.length) {
       this.faults.push({ key, label: F.label + extra + ' — accordée', pts: 0, elim: false, t: this.t, forgiven: true });
-      this.audio.beep('warn'); this.speak(F.label + '. ' + pick(this.mood.forgiveLines)); return;
+      this.audio.beep('warn'); this.speak(pick(TALK[key] || [F.label + '.']) + ' ' + pick(this.mood.forgiveLines)); return;
     }
     const f = { key, label: F.label + extra, pts: F.pts || 0, elim: !!F.elim, t: this.t };
     this.faults.push(f);
     this.audio.beep(f.elim ? 'elim' : 'warn');
     if (f.elim) {
-      if (this.mode === 'exam') { this.speak(F.label + '. C\'est une faute éliminatoire, l\'examen est terminé. Arrêtez-vous dès que possible.'); this.finish(); }
-      else this.speak(F.label + ' : à l\'examen, ce serait éliminatoire !');
-    } else this.speak(F.label + '.', this.mode === 'free');
+      const line = pick(TALK[key] || [F.label + '.']);
+      if (this.mode === 'exam') { this.speak(line + ' ' + pick(ELIM_END)); this.finish(); }
+      else this.speak(line + ' ' + pick(FREE_ELIM));
+    } else {
+      // réaction humaine (pas toujours pendant l'examen : un inspecteur note souvent en silence)
+      const talk = this.mode === 'free' || Math.random() < (REACT[this.moodKey] ?? 0.5);
+      this.speak(pick(TALK[key] || [F.label + '.']), talk);
+    }
   }
 
   finish() {
@@ -430,7 +437,7 @@ export class Exam {
 
   // informations affichées sur l'écran central
   screenInfo(car) {
-    const title = (this.mode === 'exam' ? `Examen — manœuvres ${Math.min(this.maneuvers, this.target)}/${this.target}` : 'Conduite libre') + `  ·  inspecteur ${this.mood.emoji} ${this.mood.label}`;
+    const title = `Permis ${this.vclass} · ` + (this.mode === 'exam' ? `Examen — manœuvres ${Math.min(this.maneuvers, this.target)}/${this.target}` : 'Conduite libre') + `  ·  inspecteur ${this.mood.emoji} ${this.mood.label}`;
     const pen = this.faults.reduce((s, f) => s + f.pts, 0);
     const info = { title, timer: this.mode === 'exam' ? `${31 - pen}/31` : '', faults: this.faults, say: this.t - this.sayT < 9 ? this.say : '' };
     if (this.result) { info.result = this.result; return info; }

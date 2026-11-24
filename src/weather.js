@@ -42,21 +42,21 @@ export class Rain {
 
 // Gouttes sur le pare-brise + essuie-glaces (posés dans le plan incliné de la vitre)
 export class Windshield {
-  constructor(car) {
-    const tilt = Math.atan2(0.84, 0.40);
-    this.W = 1.24; this.H = 0.9;                               // dimensions dans le plan de la vitre (m)
+  constructor(car, ws) {
+    const tilt = ws.tilt;
+    this.W = ws.W; this.H = ws.H;                               // dimensions dans le plan de la vitre (m)
     const c = this.c = document.createElement('canvas'); c.width = 512; c.height = 372; this.g = c.getContext('2d');
     this.tex = new THREE.CanvasTexture(c); this.tex.colorSpace = THREE.SRGBColorSpace;
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(this.W, this.H), new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, toneMapped: false }));
     // repère de la vitre : origine au centre bas, axe « haut » le long de la pente
     const frame = this.frame = new THREE.Group();
-    frame.position.set(0, 1.035, 1.045); frame.rotation.set(tilt, Math.PI, 0, 'YXZ');
+    frame.position.set(...ws.pos); frame.rotation.set(tilt, Math.PI, 0, 'YXZ');
     plane.position.set(0, this.H / 2, 0.008); frame.add(plane);
     car.obj.add(frame);
     // essuie-glaces (pivots en bas de la vitre)
     this.wipers = [];
     const mat = new THREE.MeshStandardMaterial({ color: 0x101113, roughness: 0.5, metalness: 0.4 });
-    for (const [px, len] of [[-0.34, 0.6], [0.26, 0.56]]) { // repère de la vitre : +x = droite du conducteur (le plan est tourné de π)
+    for (const [px, len] of ws.wipers) { // repère de la vitre : +x = droite du conducteur (le plan est tourné de π)
       const piv = new THREE.Group(); piv.position.set(px, 0.03, -0.018);
       const arm = new THREE.Mesh(new THREE.BoxGeometry(0.012, len, 0.01), mat); arm.position.y = len / 2; piv.add(arm);
       const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, len * 0.95, 0.018), mat); blade.position.set(0.012, len / 2 + 0.02, 0.006); piv.add(blade);

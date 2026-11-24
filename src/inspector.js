@@ -7,7 +7,7 @@ import { glb } from './assets.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z).normalize();
 
-export async function loadInspector(car) {
+export async function loadInspector(car, seat = { hips: [-0.36, 0.6, -0.24], board: [-0.36, 0.72, 0.1] }) {
   const g = await glb('assets/chars/readyplayer.me.glb');
   const root = SkeletonUtils.clone(g.scene);
   const bones = {}; const morphs = [];
@@ -47,7 +47,7 @@ export async function loadInspector(car) {
   root.updateMatrixWorld(true);
   const hips = bones.Hips.getWorldPosition(new THREE.Vector3());
   car.obj.worldToLocal(hips);
-  root.position.add(new THREE.Vector3(-0.36, 0.6, -0.24).sub(hips));
+  root.position.add(new THREE.Vector3(...seat.hips).sub(hips));
   root.updateMatrixWorld(true);
 
   // planchette d'évaluation sur les genoux
@@ -60,7 +60,7 @@ export async function loadInspector(car) {
   const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.28), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }));
   paper.rotation.x = -Math.PI / 2; paper.position.y = 0.005; board.add(paper);
   const clip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.015, 0.03), new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 1, roughness: 0.3 })); clip.position.set(0, 0.01, -0.14); board.add(clip);
-  board.position.set(-0.36, 0.72, 0.1); board.rotation.set(0.35, 0.1, 0);
+  board.position.set(...seat.board); board.rotation.set(0.35, 0.1, 0);
   car.obj.add(board);
 
   // ---------- animation ----------

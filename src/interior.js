@@ -44,6 +44,7 @@ function textures() {
   return TEX;
 }
 
+export function interiorMaterials() { return materials(); }
 function materials() {
   const T = textures();
   const std = (o) => new THREE.MeshStandardMaterial(o);
@@ -65,15 +66,15 @@ function materials() {
   };
 }
 
-const rb = (w, h, d, r = 0.02, s = 3) => new RoundedBoxGeometry(w, h, d, s, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
-function mesh(geo, mat, pos, rot, parent) {
+export const rb = (w, h, d, r = 0.02, s = 3) => new RoundedBoxGeometry(w, h, d, s, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
+export function mesh(geo, mat, pos, rot, parent) {
   const m = new THREE.Mesh(geo, mat);
   if (pos) m.position.set(...pos); if (rot) m.rotation.set(...rot);
   m.castShadow = false; m.receiveShadow = true;
   parent.add(m); return m;
 }
 // poutre entre deux points (montants)
-function beam(a, b, w, t, mat, parent, roll = 0) {
+export function beam(a, b, w, t, mat, parent, roll = 0) {
   const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
   const len = A.distanceTo(B);
   const m = mesh(rb(w, len, t, Math.min(w, t) * 0.45), mat, null, null, parent);

@@ -5,16 +5,32 @@ import { WHEEL_MAX } from './car.js';
 import { CLUSTER } from './interior.js';
 
 export const EYE = new THREE.Vector3(0.36, 1.21, -0.12);   // position des yeux (repère voiture, avant = +z, gauche = +x)
+const TILT_CAR = Math.atan2(0.84, 0.40);
+// disposition du poste de conduite de la citadine (les autres véhicules fournissent car.layout)
+export const CAR_LAYOUT = {
+  eye: EYE,
+  screen: { pos: [0.0, 1.0, 0.5], rot: [0.22, -0.32], scale: 1 },
+  cluster: { pos: [CLUSTER.pos.x, CLUSTER.pos.y - 0.008, CLUSTER.pos.z], rotX: -0.18, scale: 1 },
+  hud: { pos: [EYE.x, 1.147, 0.79], tilt: TILT_CAR, w: 0.3, h: 0.075 },
+  mirrors: [
+    ['center', 0.25, 0.07, [0.02, 1.36, 0.34], [-0.06, -0.24], 0.06, 16, [640, 180]],
+    ['left', 0.15, 0.1, [0.9, 1.09, 0.492], [0, 0.38], -0.53, 30, [320, 200], 'round'],
+    ['right', 0.15, 0.1, [-0.9, 1.09, 0.492], [0, -0.56], 0.71, 30, [320, 200], 'round'],
+  ],
+  windshield: { pos: [0, 1.035, 1.045], tilt: TILT_CAR, W: 1.24, H: 0.9, wipers: [[-0.34, 0.6], [0.26, 0.56]] },
+  passenger: { hips: [-0.36, 0.6, -0.24], board: [-0.36, 0.72, 0.1] },
+  wheelMax: 7.6,
+};
 
 export class Cockpit {
   constructor(car, renderer, quality) {
     this.car = car; this.renderer = renderer;
-    this.root = car.obj;
+    this.root = car.obj; this.L = car.layout || CAR_LAYOUT;
     this.mirrors = [];
     this.grab = [null, null];
     this.wheelAngle = 0; this.held = false;
     this.buildScreen();
-    this.buildCluster();
+    if (this.L.cluster) this.buildCluster();
     this.buildMirrors(quality);
     this.buildHUD();
   }
@@ -25,11 +41,12 @@ export class Cockpit {
     this.scr = c; this.scrG = c.getContext('2d');
     this.scrTex = new THREE.CanvasTexture(c); this.scrTex.colorSpace = THREE.SRGBColorSpace; this.scrTex.anisotropy = 8;
     const mat = new THREE.MeshBasicMaterial({ map: this.scrTex, toneMapped: false });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.27, 0.158), mat);
-    const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.176, 0.02), new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.35, metalness: 0.4 }));
+    const sc = this.L.screen.scale || 1;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.27 * sc, 0.158 * sc), mat);
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.29 * sc, 0.176 * sc, 0.02), new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.35, metalness: 0.4 }));
     const g = new THREE.Group(); g.add(bezel); m.position.z = -0.0105; m.rotation.y = Math.PI; g.add(m);
     // posé sur le haut de la planche de bord, au centre, orienté vers le conducteur
-    g.position.set(0.0, 1.0, 0.5); g.rotation.set(0.22, -0.32, 0, 'YXZ'); // tourné vers le conducteur (+x), incliné vers ses yeux
+    g.position.set(...this.L.screen.pos); g.rotation.set(this.L.screen.rot[0], this.L.screen.rot[1], 0, 'YXZ'); // tourné vers le conducteur, incliné vers ses yeux
     this.root.add(g); this.screen = g;
   }
   drawScreen(info) {
@@ -88,12 +105,14 @@ export class Cockpit {
     const c = document.createElement('canvas'); c.width = 1024; c.height = 400;
     this.cl = c; this.clG = c.getContext('2d');
     this.clTex = new THREE.CanvasTexture(c); this.clTex.colorSpace = THREE.SRGBColorSpace; this.clTex.anisotropy = 8;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.129), new THREE.MeshBasicMaterial({ map: this.clTex, toneMapped: false }));
-    m.position.copy(CLUSTER.pos); m.rotation.set(-0.18, Math.PI, 0, 'YXZ'); m.position.y -= 0.008;
+    const cs = (this.L.cluster && this.L.cluster.scale) || 1;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.33 * cs, 0.129 * cs), new THREE.MeshBasicMaterial({ map: this.clTex, toneMapped: false }));
+    m.position.set(...this.L.cluster.pos); m.rotation.set(this.L.cluster.rotX, Math.PI, 0, 'YXZ');
     this.root.add(m); this.cluster = m;
   }
   // combiné à aiguilles : compteur, compte-tours, écran central (rapport, limitation, clignotants)
   drawCluster(st) {
+    if (!this.clG) return;
     const g = this.clG, W = 1024, H = 400;
     g.fillStyle = '#050608'; g.fillRect(0, 0, W, H);
     const gauge = (cx, cy, r, val, max, step, label, unit, red) => {
@@ -140,9 +159,9 @@ export class Cockpit {
     // projeté SUR le pare-brise : plan incliné comme la vitre (pente mesurée : 0,40 m de haut pour 0,84 m de profondeur),
     // placé entre ~1,5° et ~5,5° sous l'horizon du conducteur, donc au-dessus de la jante du volant.
     // La vitre étant très inclinée, le plan est étiré en hauteur pour que le texte paraisse droit.
-    const tilt = Math.atan2(0.84, 0.40);          // ≈ 64° : normale de la vitre vers le conducteur
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075 / Math.cos(tilt - 0.06)), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false }));
-    m.position.set(EYE.x, 1.147, 0.79); m.rotation.set(tilt, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
+    const H = this.L.hud, tilt = H.tilt;          // inclinaison de la vitre (citadine ≈ 64°, camion/bus ≈ vertical)
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(H.w, H.h / Math.max(0.3, Math.cos(tilt - 0.06))), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false }));
+    m.position.set(...H.pos); m.rotation.set(tilt, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
     this.root.add(m); this.hudMesh = m;
   }
   drawHUD(st) {
@@ -187,11 +206,8 @@ export class Cockpit {
       this.mirrors.push(m);
       return m;
     };
-    // intérieur (centre), gauche (côté conducteur) et droit
-    mk('center', 0.25, 0.07, new THREE.Vector3(0.02, 1.36, 0.34), new THREE.Euler(-0.06, -0.24, 0, 'YXZ'), 0.06, 16, [640, 180]);
-    // rétros extérieurs posés sur les coques du modèle (x ±0.85–0.96, y 1.02–1.16, z 0.50–0.64)
-    mk('left', 0.15, 0.1, new THREE.Vector3(0.9, 1.09, 0.492), new THREE.Euler(0, 0.38, 0, 'YXZ'), -0.53, 30, [320, 200], 'round');
-    mk('right', 0.15, 0.1, new THREE.Vector3(-0.9, 1.09, 0.492), new THREE.Euler(0, -0.56, 0, 'YXZ'), 0.71, 30, [320, 200], 'round');
+    // rétroviseurs du véhicule : [nom, largeur, hauteur, position, [tangage, lacet], lacet caméra, champ, résolution, forme]
+    for (const [name, w, h, p, r, cy, fov, res, shape] of this.L.mirrors) mk(name, w, h, new THREE.Vector3(...p), new THREE.Euler(r[0], r[1], 0, 'YXZ'), cy, fov, res, shape);
   }
   // direction (repère voiture) du centre d'un miroir, pour vérifier les regards
   mirrorLocal(name) { const m = this.mirrors.find(x => x.name === name); return m ? m.group.position : null; }
@@ -217,11 +233,12 @@ export class Cockpit {
   // hands : [{ pos: Vector3 monde, grip: bool }]
   updateWheel(dt, hands, stickSteer, kmh) {
     const sw = this.car.steeringWheel; if (!sw) return this.wheelAngle;
+    const WMAX = this.L.wheelMax || WHEEL_MAX;
     const ax = new THREE.Vector3().fromArray(sw.userData.axis);
     const R = sw.userData.radius || 0.18;
     const inv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
     // repère du plan du volant
-    const up = new THREE.Vector3(0, 1, 0).projectOnPlane(ax).normalize();
+    const up = (Math.abs(ax.y) > 0.7 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0)).projectOnPlane(ax).normalize(); // guidon : axe presque vertical
     const side = new THREE.Vector3().crossVectors(ax, up).normalize();
     const angOf = (pLocal) => { const d = pLocal.clone().sub(sw.position); return { a: Math.atan2(d.dot(side), d.dot(up)), r: d.clone().projectOnPlane(ax).length(), z: d.dot(ax) }; };
     let delta = 0, n = 0;
@@ -241,14 +258,14 @@ export class Cockpit {
     this.held = n > 0;
     if (n) this.wheelAngle += delta / n;
     else if (Math.abs(stickSteer) > 0.05) { // joystick : angle volant proportionnel, vitesse limitée
-      const target = stickSteer * WHEEL_MAX * (kmh > 40 ? 0.35 : kmh > 20 ? 0.6 : 1);
-      this.wheelAngle += THREE.MathUtils.clamp(target - this.wheelAngle, -dt * 9, dt * 9);
+      const target = stickSteer * WMAX * (kmh > 40 ? 0.35 : kmh > 20 ? 0.6 : 1);
+      this.wheelAngle += THREE.MathUtils.clamp(target - this.wheelAngle, -dt * 9 * WMAX / 7.6, dt * 9 * WMAX / 7.6);
     } else {
       // retour au centre (auto-alignement) quand on lâche, proportionnel à la vitesse
       const k = Math.min(1, dt * (0.6 + kmh / 15));
       this.wheelAngle -= this.wheelAngle * k;
     }
-    this.wheelAngle = THREE.MathUtils.clamp(this.wheelAngle, -WHEEL_MAX, WHEEL_MAX);
+    this.wheelAngle = THREE.MathUtils.clamp(this.wheelAngle, -WMAX, WMAX);
     return this.wheelAngle;
   }
 }

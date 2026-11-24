@@ -4,7 +4,8 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 import { City, N, RW, SW, SP, nodeX } from './city.js';
 import { setupEnv } from './env.js';
 import { loadCarTemplate, makeCar, Physics, carLOD } from './car.js';
-import { Cockpit, EYE } from './cockpit.js';
+import { Cockpit, EYE, CAR_LAYOUT } from './cockpit.js';
+import { buildVehicle } from './vehicles.js';
 import { buildInterior } from './interior.js';
 import { loadInspector } from './inspector.js';
 import { Traffic } from './traffic.js';
@@ -98,20 +99,25 @@ async function ensureWorld(quality, weather = 'sun') {
 async function startGame(mode) {
   const { city, traffic, tpl } = world;
   if (game) { scene.remove(game.car.obj); }
-  const car = makeCar(tpl, '#f4f4f2', { player: true });
+  const vclass = params.get('permis') || ($('permis') && $('permis').value) || 'B';
+  const car = vclass === 'B' ? makeCar(tpl, '#f4f4f2', { player: true }) : buildVehicle({ C: 'truck', D: 'bus', A: 'moto' }[vclass]);
+  const LAY = car.layout || CAR_LAYOUT;
   scene.add(car.obj);
   const phys = new Physics(car);
+  if (vclass === 'A') phys.handbrake = false;
   // départ : garé le long du trottoir droit, rue horizontale ligne 2, vers l'est
-  phys.x = nodeX(1) + RW + 28; phys.z = nodeX(2) + (RW - 1.05); phys.yaw = Math.PI / 2; phys.gear = 'P';
+  phys.x = nodeX(1) + RW + 10 + car.tpl.size.z / 2 + (vclass === 'B' ? 16 : 6); phys.z = nodeX(2) + (RW - car.tpl.size.x / 2 - 0.1); phys.yaw = Math.PI / 2; phys.gear = 'P';
   phys.apply();
-  const interior = buildInterior(car); car.steeringWheel = interior.wheelPivot;
-  const inspector = await loadInspector(car).catch(e => { console.warn(e); return null; });
+  let interior;
+  if (vclass === 'B') { interior = buildInterior(car); car.steeringWheel = interior.wheelPivot; }
+  else interior = car.interior;
+  const inspector = LAY.passenger ? await loadInspector(car, LAY.passenger).catch(e => { console.warn(e); return null; }) : null;
   const cockpit = new Cockpit(car, renderer, world.quality);
-  const windshield = world.rain ? new Windshield(car) : null;
+  const windshield = world.rain && LAY.windshield ? new Windshield(car, LAY.windshield) : null;
   // plaque « auto-école » sur le toit
-  car.obj.add(makeSchoolSign(car));
+  if (vclass === 'B') car.obj.add(makeSchoolSign(car));
   // rig de tête : caméra + manettes, à la place conducteur
-  const rig = new THREE.Group(); rig.position.copy(EYE); car.obj.add(rig);
+  const rig = new THREE.Group(); rig.position.copy(LAY.eye); car.obj.add(rig);
   rig.add(camera); camera.position.set(0, 0, 0); camera.rotation.set(0, Math.PI, 0);
   const hands = [];
   const factory = new XRControllerModelFactory();
@@ -124,9 +130,9 @@ async function startGame(mode) {
   }
   if (!traffic.cars.length) await traffic.init(world.quality === 'medium' ? 14 : 20, { x: phys.x, z: phys.z });
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
-  const exam = new Exam({ city, traffic, hw: world.hw, rainy: world.rainy, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
+  const exam = new Exam({ city, traffic, hw: world.hw, rainy: world.rainy, vclass, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
   voice.persona = exam.mood.persona; voice.rate = exam.mood.rate; voice.history = [];
-  game = { mode, car, phys, cockpit, interior, inspector, windshield, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  game = { vclass, LAY, mode, car, phys, cockpit, interior, inspector, windshield, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.begin();
 }
 
@@ -155,7 +161,7 @@ function recenter() {
   const yaw = e.y;
   game.rig.rotation.set(0, Math.PI - yaw, 0);
   const rp = p.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI - yaw);
-  game.rig.position.copy(EYE).sub(rp);
+  game.rig.position.copy(game.LAY.eye).sub(rp);
   void xrCam;
 }
 
@@ -204,9 +210,7 @@ function loop() {
       if (ok !== false || xr) return;
       // PC sans micro : on écrit sa question
       G.talking = false; input.keys.clear();
-      const q = prompt((voice.micError || 'Micro indisponible') + '.\nÉcris ta question à l\'inspecteur :');
-      input.keys.clear(); clock.getDelta();
-      if (q && q.trim()) ask(q.trim());
+      askBox((voice.micError || 'Micro indisponible') + ' — écris ta question :', (q) => { input.keys.clear(); clock.getDelta(); if (q) ask(q); });
     });
   }
   if (!inp.talk && G.talking) {
@@ -274,6 +278,7 @@ function loop() {
   phys.blinkOn = G.blink && G.blinkPhase;
   phys.apply();
   if (G.inspector) G.inspector.update(dt, { speaking: voice.speaking, turn: exam.instr && exam.approach && exam.approach.dist < 45 && exam.instr.turn !== 'straight' ? exam.instr.turn : null });
+  if (car.lean) { const lat = phys.v * phys.v * Math.tan(phys.steer) / (car.tpl.wheelbase * 9.81); G.lean = (G.lean || 0) + (THREE.MathUtils.clamp(Math.atan(lat), -0.7, 0.7) - (G.lean || 0)) * Math.min(1, dt * 6); car.lean.rotation.z = -G.lean; car.obj.rotation.z = 0; }
   G.interior.update({ brake: inp.brake, throttle: inp.throttle, blink: G.blink, gear: phys.gear, handbrake: phys.handbrake, leverZ: G.leverHeld ? G.leverZ : undefined });
   car.obj.updateMatrixWorld(true);
 
@@ -297,11 +302,11 @@ function loop() {
   // ----- caméra PC -----
   if (!xr && G.cam !== 'debug') {
     if (G.cam === 'in') {
-      G.rig.position.copy(EYE); G.rig.rotation.set(0, 0, 0);
+      G.rig.position.copy(G.LAY.eye); G.rig.rotation.set(0, 0, 0);
       camera.position.set(0, 0, 0); camera.rotation.set(input.look.pitch, Math.PI + input.look.yaw, 0, 'YXZ');
       camera.fov = 72;
     } else {
-      G.rig.position.set(0, 2.6, -6.5); G.rig.rotation.set(0, 0, 0);
+      const k = Math.max(1, car.tpl.size.z / 4.1); G.rig.position.set(0, 2.6 * Math.max(1, k * 0.7), -4.5 - 2 * k * 1.1); G.rig.rotation.set(0, 0, 0);
       camera.position.set(0, 0, 0); camera.rotation.set(-0.2 + input.look.pitch * 0.5, Math.PI + input.look.yaw, 0, 'YXZ');
     }
     camera.updateProjectionMatrix();
@@ -326,6 +331,23 @@ function loop() {
   G.frame++;
   cockpit.renderMirrors(scene, G.frame);
   renderer.render(scene, camera);
+}
+
+// case de saisie dans la page (prompt() est interdit dans certains navigateurs)
+function askBox(label, cb) {
+  let box = document.getElementById('askBox');
+  if (!box) {
+    box = document.createElement('form'); box.id = 'askBox';
+    box.style.cssText = 'position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:9;background:rgba(10,16,30,.92);padding:12px;border-radius:14px;display:flex;gap:8px;align-items:center;width:min(640px,92vw);font:14px Inter,Arial;color:#cfe0ff';
+    box.innerHTML = '<span id="askLbl" style="flex:0 1 auto;max-width:42%"></span><input id="askIn" style="flex:1;min-width:0;font:inherit;padding:8px 10px;border-radius:8px;border:0" autocomplete="off"><button style="font:inherit;padding:8px 12px;border:0;border-radius:8px;background:#2f6bff;color:#fff">Envoyer</button>';
+    document.body.appendChild(box);
+  }
+  box.style.display = 'flex'; document.getElementById('askLbl').textContent = label;
+  const inp = document.getElementById('askIn'); inp.value = ''; setTimeout(() => inp.focus(), 30);
+  const close = (v) => { box.style.display = 'none'; box.onsubmit = null; inp.onkeydown = null; cb(v); };
+  box.onsubmit = (e) => { e.preventDefault(); close(inp.value.trim()); };
+  inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Escape') close(''); };
+  inp.onkeyup = (e) => e.stopPropagation();
 }
 
 function examContext(G) {
@@ -353,7 +375,8 @@ function collide(G, px, pz, pyaw) {
   }
   // trottoir
   let curb = false;
-  for (const [x, z] of phys.corners(-0.15)) {
+  const heavy = G.vclass === 'C' || G.vclass === 'D';
+  for (const [x, z] of phys.corners(-0.15).filter((_, i) => !heavy || i === 0 || i === 1 || i === 4)) {
     if (Math.abs(x) > lim || Math.abs(z) > lim || (Math.abs(x) > city.ext - 0.5 && hw.onLinkArea(x, z))) continue; // hors ville : géré par l'autoroute
     if (city.onSidewalk(x, z)) { curb = true; break; }
   }
