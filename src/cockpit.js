@@ -58,6 +58,20 @@ export class Cockpit {
     g.fillText(info.title || '', 36, 26);
     if (info.timer) { g.textAlign = 'right'; g.fillText(info.timer, W - 36, 26); g.textAlign = 'left'; }
     if (info.result) return this.drawResult(info.result);
+    if (info.quiz) { // question de vérification
+      const qz = info.quiz;
+      g.fillStyle = '#7fb0ff'; g.font = '700 28px Inter, Arial'; g.fillText(`Question ${qz.n}/${qz.of}`, 36, 72);
+      g.fillStyle = '#fff'; g.font = '800 38px Inter, Arial'; wrap(g, qz.q, 36, 112, W - 72, 46);
+      const keys = ['1 · X', '2 · Y', '3 · A'];
+      qz.a.forEach((t, i) => {
+        const y = 250 + i * 104;
+        g.fillStyle = 'rgba(47,107,255,.18)'; roundRect(g, 30, y, W - 60, 90, 16); g.fill();
+        g.fillStyle = '#2f6bff'; roundRect(g, 42, y + 14, 112, 62, 12); g.fill();
+        g.fillStyle = '#fff'; g.font = '800 30px Inter, Arial'; g.textAlign = 'center'; g.fillText(keys[i], 98, y + 30); g.textAlign = 'left';
+        g.font = '600 29px Inter, Arial'; wrap(g, t, 176, y + 14, W - 230, 34);
+      });
+      return;
+    }
     // flèche d'instruction
     const ins = info.instruction;
     if (ins) {

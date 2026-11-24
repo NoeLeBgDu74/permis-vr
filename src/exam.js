@@ -6,6 +6,7 @@ import { MOODS, randomMood, pick } from './moods.js';
 import { TALK, ELIM_END, FREE_ELIM, REACT } from './talk.js';
 import { at as hwAt, PER as HW_PER } from './highway.js';
 import { NIGHT } from './night.js';
+import { pickQuestions } from './quiz.js';
 
 const FAULTS = {
   blink: { label: 'Clignotant non utilisé avant de tourner', pts: 1 },
@@ -64,6 +65,7 @@ export class Exam {
   begin() {
     const veh = { B: '', C: ' Aujourd\'hui : permis poids lourd. Attention au gabarit dans les virages, prenez large.', D: ' Aujourd\'hui : permis transport en commun. Douceur, pensez à vos passagers.', A: ' Aujourd\'hui : permis moto. Je vous suis en voiture et je vous guide à la radio.' }[this.vclass] || '';
     if (NIGHT.on) this.nightHint = ' Il fait nuit : n\'oubliez pas d\'allumer vos phares.';
+    if (this.mode === 'exam') { this.startText = (this.vclass === 'A' ? 'Passez en D, clignotant gauche, contrôle de l\'angle mort, puis démarrez.' : 'Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.'); this.state = 'quiz'; this.quiz = pickQuestions(); this.qi = 0; this.speak(pick(this.mood.hello) + veh + (this.nightHint || '') + ' Avant de partir, deux petites questions. ' + this.questionText()); return; }
     if (this.mode === 'exam') this.speak(pick(this.mood.hello) + veh + (this.nightHint || '') + (this.vclass === 'A' ? ' Passez en D, clignotant gauche, contrôle de l\'angle mort, puis démarrez.' : ' Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.'));
     else this.speak('Conduite libre : roulez où vous voulez. Je vous signale les erreurs pour vous entraîner.');
   }
@@ -142,6 +144,8 @@ export class Exam {
     const f = car.forward();
     const loc = this.city.locate(car.x, car.z);
 
+    // on démarre pendant les questions : on les abandonne
+    if (this.state === 'quiz' && kmh > 6) { this.state = 'start'; this.speak('Bon, on verra les questions plus tard.'); }
     // départ : clignotant + angle mort avant de quitter le trottoir
     if (this.state === 'start') {
       if (kmh > 6) {
@@ -318,6 +322,19 @@ export class Exam {
     } else { this.freeSlotT = 0; if (!inSlot) this.freeSlotDone = false; }
   }
 
+  // ---------- questions de vérification ----------
+  questionText() { const [q, a] = this.quiz[this.qi]; return `${q} Un : ${a[0]}. Deux : ${a[1]}. Trois : ${a[2]}.`; }
+  answer(i) {
+    if (this.state !== 'quiz') return;
+    const [q, , good, expl] = this.quiz[this.qi];
+    let txt;
+    if (i === good) { txt = pick(['Exact.', 'C\'est ça.', 'Très bien.']) + ' ' + expl; this.audio.beep('ok'); }
+    else { txt = pick(['Non…', 'Ce n\'est pas ça.', 'Hmm, non.']) + ' ' + expl; this.faults.push({ key: 'quiz', label: 'Question ratée : ' + q, pts: 1, elim: false, t: this.t, x: this.pos && this.pos[0], z: this.pos && this.pos[1] }); this.audio.beep('warn'); }
+    this.qi++;
+    if (this.qi < this.quiz.length) this.speak(txt + ' Question suivante. ' + this.questionText());
+    else { this.state = 'start'; this.speak(txt + ' Bien, on peut y aller. ' + this.startText); }
+  }
+
   // réactions aux autres usagers
   react(kind) {
     if (this.t - (this.reactT || -99) < 15) return;
@@ -468,6 +485,7 @@ export class Exam {
     const pen = this.faults.reduce((s, f) => s + f.pts, 0);
     const info = { title, timer: this.mode === 'exam' ? `${31 - pen}/31` : '', faults: this.faults, say: this.t - this.sayT < 9 ? this.say : '' };
     if (this.result) { info.result = this.result; return info; }
+    if (this.state === 'quiz') { const [q, a] = this.quiz[this.qi]; info.quiz = { q, a, n: this.qi + 1, of: this.quiz.length }; return info; }
     if (this.state === 'start' && this.mode === 'exam') info.instruction = { turn: 'go', text: 'D, frein à main desserré, clignotant gauche, angle mort' };
     else if (this.state === 'creneau') info.instruction = { turn: 'park', text: 'Créneau à droite, en marche arrière' };
     else if (this.state === 'park') info.instruction = { turn: 'park', text: 'Garez-vous à droite, puis P' };

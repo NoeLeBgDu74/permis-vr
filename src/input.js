@@ -37,7 +37,7 @@ export class Input {
     if (this.any('s', 'arrowdown', ' ')) st.brake = 1;
     if (this.any('q', 'arrowleft')) st.steer += 1;
     if (this.any('d', 'arrowright')) st.steer -= 1;
-    for (const [k, ev] of [['a', 'blinkL'], ['e', 'blinkR'], ['r', 'gear'], ['n', 'gearN'], ['p', 'park'], ['x', 'handbrake'], ['g', 'wipers'], ['l', 'lights'], ['h', 'horn'], ['c', 'cam'], ['enter', 'restart'], ['escape', 'menu'], ['v', 'recenter'], ['f', 'free']]) if (this.take(k)) st.events.add(ev);
+    for (const [k, ev] of [['a', 'blinkL'], ['e', 'blinkR'], ['r', 'gear'], ['n', 'gearN'], ['p', 'park'], ['x', 'handbrake'], ['g', 'wipers'], ['l', 'lights'], ['1', 'ans1'], ['2', 'ans2'], ['3', 'ans3'], ['&', 'ans1'], ['é', 'ans2'], ['"', 'ans3'], ['h', 'horn'], ['c', 'cam'], ['enter', 'restart'], ['escape', 'menu'], ['v', 'recenter'], ['f', 'free']]) if (this.take(k)) st.events.add(ev);
     st.hornHeld = this.keys.has('h');
     st.talk = this.keys.has('t');
     // manettes VR

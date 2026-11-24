@@ -201,6 +201,13 @@ function loop() {
   if (G.needRecenter > 0 && xr) { G.needRecenter--; if (G.needRecenter === 0) recenter(); }
 
   // ----- événements -----
+  // pendant les questions de vérification : 1/2/3 (PC) ou X / Y / A (manettes)
+  if (exam.state === 'quiz') {
+    const map = [['ans1', 0], ['ans2', 1], ['ans3', 2]];
+    if (xr) map.push(['blinkL', 0], ['blinkR', 1], ['gear', 2]);
+    for (const [ev, i] of map) if (inp.events.has(ev)) { inp.events.delete(ev); exam.answer(i); break; }
+    if (xr) { inp.events.delete('blinkL'); inp.events.delete('blinkR'); inp.events.delete('gear'); }
+  }
   const kmh = Math.abs(phys.v) * 3.6;
   if (exam.state === 'done' && exam.mode === 'exam' && (inp.events.has('restart') || (xr && inp.events.has('gear')))) { startGame('exam'); return; }
   if (exam.state === 'done' && (inp.events.has('free') || (xr && inp.events.has('horn')))) { startGame('free'); return; }
