@@ -36,6 +36,11 @@
   details { margin-top: 12px; font-size: 13px; color: var(--muted); }
   details summary { cursor: pointer; color: var(--fg); }
   kbd { background: rgba(255,255,255,.12); border-radius: 5px; padding: 1px 6px; font-family: inherit; font-size: 12px; }
+  .carnet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 14px; }
+  .carnet .p { background: rgba(255,255,255,.06); border-radius: 12px; padding: 10px 8px; text-align: center; font-size: 12px; color: var(--muted); }
+  .carnet .p b { display: block; font-size: 22px; color: var(--fg); }
+  .carnet .p.ok { background: linear-gradient(160deg, rgba(46,204,113,.28), rgba(46,204,113,.08)); color: #c8f5da; }
+  @media (max-width: 520px) { .carnet { grid-template-columns: repeat(2, 1fr); } }
   .q { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--muted); }
   .q select { font: inherit; background: rgba(255,255,255,.08); color: var(--fg); border: 0; border-radius: 8px; padding: 6px 8px; }
   #loading { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 6; background: var(--card); padding: 10px 18px; border-radius: 999px; font-size: 14px; }
@@ -48,11 +53,12 @@
 <div id="menu">
   <div class="card">
     <div class="badge"><span class="plate">A</span><h1>Permis VR</h1></div>
-    <p class="sub">Installe-toi au volant d'une citadine d'auto-école et passe l'épreuve pratique du permis dans une ville française : feux, stops, priorités à droite, piétons, limitations… L'inspecteur te guide et note chaque faute.</p>
+    <p class="sub">Passe ton permis voiture, camion, bus ou moto dans une ville française, avec rond-point, créneau et autoroute, de jour comme de nuit, sous le soleil ou la pluie. L'inspecteur (d'humeur variable !) te guide, te parle, et note chaque faute.</p>
     <div class="row">
       <button class="vr" id="vrExam" disabled>🥽 Examen en VR</button>
       <button class="vr" id="vrFree" disabled>🥽 Conduite libre en VR</button>
     </div>
+    <div id="carnet" class="carnet"></div>
     <div class="row">
       <button id="pcExam">💻 Examen sur PC</button>
       <button id="pcFree">💻 Conduite libre sur PC</button>
