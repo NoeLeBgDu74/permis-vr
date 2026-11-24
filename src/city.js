@@ -32,7 +32,7 @@ export class City {
     this.solids = [];      // emprises bâties (collision)
     this.crossings = [];   // passages piétons {x,z,axis,w,len}
     this.lightMats = new Map();
-    this.time = 0;
+    this.time = 0; this.ext = HALF + RW;
     this.setupNetwork();
   }
 
@@ -118,6 +118,7 @@ export class City {
     return { type: 'off' };
   }
   onSidewalk(x, z) {
+    if (this.hw && Math.abs(x) > this.ext - 0.5 && this.hw.onLinkArea(x, z)) return false;
     for (const r of this.rounds) { const d = Math.hypot(x - r.x, z - r.z); if (d < RI + 0.15) return true; if (d < RO) return false; }
     for (const b of this.blocks) if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1 && inPoly(x, z, b.poly)) return true;
     return Math.abs(x) > HALF + RW || Math.abs(z) > HALF + RW;
@@ -176,9 +177,11 @@ export class City {
     G.add('grassFar', grass);
     // bas-côté de la rocade : bande de trottoir extérieure
     const rp = (x0, x1, z0, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+    const lz = this.nodes[5][2].z; // passage de la route d'accès à l'autoroute dans le trottoir est
     for (const s of [-1, 1]) {
       this.addSlab(G, rp(-ext - SW, ext + SW, s > 0 ? ext : -ext - SW, s > 0 ? ext + SW : -ext), null);
-      this.addSlab(G, rp(s > 0 ? ext : -ext - SW, s > 0 ? ext + SW : -ext, -ext, ext), null);
+      if (s > 0) { this.addSlab(G, rp(ext, ext + SW, -ext, lz - RW), null); this.addSlab(G, rp(ext, ext + SW, lz + RW, ext), null); }
+      else this.addSlab(G, rp(-ext - SW, -ext, -ext, ext), null);
     }
     this.windowList = []; this.treeSpots = [];
     this.buildMarkings(G);
@@ -675,6 +678,7 @@ export class City {
     for (let k = 0; k < 520; k++) {
       const a = R() * Math.PI * 2, r = HALF + RW + 18 + Math.pow(R(), 0.7) * 420;
       let x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (this.hw && this.hw.near(x, z, 14)) continue;
       spots.push([x, z, 0.9 + R() * 0.9, true]);
     }
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 3.4, 9, 1); trunk.translate(0, 1.7, 0); uvCyl(trunk);

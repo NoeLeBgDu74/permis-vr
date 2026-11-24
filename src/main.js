@@ -13,6 +13,7 @@ import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { Voice } from './voice.js';
 import { applyRainLook, Rain, Windshield } from './weather.js';
+import { Highway } from './highway.js';
 import { setAnisotropy } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
@@ -80,10 +81,14 @@ async function ensureWorld(quality, weather = 'sun') {
   if (weather === 'random') weather = Math.random() < 0.45 ? 'rain' : 'sun';
   if (quality === 'medium') { renderer.shadowMap.enabled = true; }
   const env = await setupEnv(renderer, scene, quality);
-  const city = new City(scene); await city.build(quality);
+  const city = new City(scene);
+  const hw = new Highway(scene, city); city.hw = hw;
+  await city.build(quality);
+  await hw.build(weather === 'rain');
   const traffic = new Traffic(scene, city);
   const tpl = await loadCarTemplate('ace11');
-  world = { env, city, traffic, quality, tpl, rain: null };
+  world = { env, city, traffic, quality, tpl, rain: null, hw, rainy: weather === 'rain' };
+  await hw.initTraffic(quality === 'medium' ? 16 : 26);
   if (weather === 'rain') { applyRainLook(scene, env, city); world.rain = new Rain(scene); audio.startRain(); }
   // compile les shaders tout de suite (évite les saccades au premier regard)
   renderer.compile(scene, camera);
@@ -119,7 +124,7 @@ async function startGame(mode) {
   }
   if (!traffic.cars.length) await traffic.init(world.quality === 'medium' ? 14 : 20, { x: phys.x, z: phys.z });
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
-  const exam = new Exam({ city, traffic, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
+  const exam = new Exam({ city, traffic, hw: world.hw, rainy: world.rainy, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
   voice.persona = exam.mood.persona; voice.rate = exam.mood.rate; voice.history = [];
   game = { mode, car, phys, cockpit, interior, inspector, windshield, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.begin();
@@ -277,6 +282,7 @@ function loop() {
   if (world.rain) world.rain.update(dt, car.obj.position);
   if (G.windshield) { if (inp.events.has('wipers')) G.windshield.on = !G.windshield.on; G.windshield.update(dt, kmh, true); }
   world.traffic.update(dt, { x: phys.x, z: phys.z, yaw: phys.yaw, v: phys.v, len: car.tpl.size.z, half: car.tpl.size.x / 2 });
+  world.hw.updateTraffic(dt, { x: phys.x, z: phys.z, v: phys.v, len: car.tpl.size.z }, world.rainy);
   // regard (repère voiture)
   camera.getWorldPosition(tmpV); camera.getWorldQuaternion(tmpQ);
   const inv = car.obj.matrixWorld.clone().invert();
@@ -333,10 +339,11 @@ function collide(G, px, pz, pyaw) {
   const { phys, exam } = G;
   const city = world.city;
   const t = exam.t;
-  const lim = (N - 1) / 2 * SP + RW + SW + 1.5;
+  const lim = (N - 1) / 2 * SP + RW + SW + 0.5, hw = world.hw;
   let hit = false;
   for (const [x, z] of phys.corners()) {
-    if (city.hitsSolid(x, z) || Math.abs(x) > lim || Math.abs(z) > lim) { hit = true; break; }
+    const outside = Math.abs(x) > lim || Math.abs(z) > lim || (Math.abs(x) > city.ext - 0.5 && hw.onLinkArea(x, z));
+    if (outside ? !hw.drivable(x, z) : city.hitsSolid(x, z)) { hit = true; break; }
   }
   if (hit) {
     phys.x = px; phys.z = pz; phys.yaw = pyaw;
@@ -346,7 +353,10 @@ function collide(G, px, pz, pyaw) {
   }
   // trottoir
   let curb = false;
-  for (const [x, z] of phys.corners(-0.15)) if (city.onSidewalk(x, z)) { curb = true; break; }
+  for (const [x, z] of phys.corners(-0.15)) {
+    if (Math.abs(x) > lim || Math.abs(z) > lim || (Math.abs(x) > city.ext - 0.5 && hw.onLinkArea(x, z))) continue; // hors ville : géré par l'autoroute
+    if (city.onSidewalk(x, z)) { curb = true; break; }
+  }
   if (curb) {
     phys.v *= 0.96;
     if (Math.abs(phys.v) > 0.8 && t - G.curbT > 6) { G.curbT = t; exam.fault('curb'); }
@@ -364,6 +374,17 @@ function collide(G, px, pz, pyaw) {
       phys.x = px; phys.z = pz; phys.yaw = pyaw;
       if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
       phys.v = 0; a.v = 0;
+      return;
+    }
+  }
+  for (const a of world.hw.cars) {
+    const rx = a.x - phys.x, rz = a.z - phys.z;
+    if (rx * rx + rz * rz > 64) continue;
+    const lx = rx * c - rz * s, lz = rx * s + rz * c;
+    if (Math.abs(lx) < hx + a.half - 0.15 && Math.abs(lz) < hz + a.len / 2 - 0.2) {
+      phys.x = px; phys.z = pz; phys.yaw = pyaw;
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+      phys.v = 0; a.v = Math.min(a.v, 3);
       return;
     }
   }
