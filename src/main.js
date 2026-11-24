@@ -12,6 +12,7 @@ import { Exam } from './exam.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { Voice } from './voice.js';
+import { applyRainLook, Rain, Windshield } from './weather.js';
 import { setAnisotropy } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
@@ -62,7 +63,7 @@ async function launch(mode, vr) {
     } catch (e) { alert('Impossible de démarrer la VR : ' + e.message); return; }
   }
   $('menu').classList.add('hidden'); $('loading').classList.remove('hidden');
-  try { await ensureWorld(qualSel.value); await startGame(mode); }
+  try { await ensureWorld(qualSel.value, params.get('meteo') || $('weather').value); await startGame(mode); }
   catch (e) { console.error(e); $('loading').textContent = 'Erreur de chargement : ' + e.message; return; }
   $('loading').classList.add('hidden');
   if (session) {
@@ -74,14 +75,16 @@ async function launch(mode, vr) {
   } else { $('hud').classList.remove('hidden'); }
 }
 
-async function ensureWorld(quality) {
+async function ensureWorld(quality, weather = 'sun') {
   if (world) return;
+  if (weather === 'random') weather = Math.random() < 0.45 ? 'rain' : 'sun';
   if (quality === 'medium') { renderer.shadowMap.enabled = true; }
   const env = await setupEnv(renderer, scene, quality);
   const city = new City(scene); await city.build(quality);
   const traffic = new Traffic(scene, city);
   const tpl = await loadCarTemplate('ace11');
-  world = { env, city, traffic, quality, tpl };
+  world = { env, city, traffic, quality, tpl, rain: null };
+  if (weather === 'rain') { applyRainLook(scene, env, city); world.rain = new Rain(scene); audio.startRain(); }
   // compile les shaders tout de suite (évite les saccades au premier regard)
   renderer.compile(scene, camera);
 }
@@ -99,6 +102,7 @@ async function startGame(mode) {
   const interior = buildInterior(car); car.steeringWheel = interior.wheelPivot;
   const inspector = await loadInspector(car).catch(e => { console.warn(e); return null; });
   const cockpit = new Cockpit(car, renderer, world.quality);
+  const windshield = world.rain ? new Windshield(car) : null;
   // plaque « auto-école » sur le toit
   car.obj.add(makeSchoolSign(car));
   // rig de tête : caméra + manettes, à la place conducteur
@@ -116,7 +120,7 @@ async function startGame(mode) {
   if (!traffic.cars.length) await traffic.init(world.quality === 'medium' ? 14 : 20, { x: phys.x, z: phys.z });
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
   const exam = new Exam({ city, traffic, audio, mode });
-  game = { mode, car, phys, cockpit, interior, inspector, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  game = { mode, car, phys, cockpit, interior, inspector, windshield, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.begin();
 }
 
@@ -269,6 +273,8 @@ function loop() {
 
   // ----- monde -----
   world.city.update(dt);
+  if (world.rain) world.rain.update(dt, car.obj.position);
+  if (G.windshield) { if (inp.events.has('wipers')) G.windshield.on = !G.windshield.on; G.windshield.update(dt, kmh, true); }
   world.traffic.update(dt, { x: phys.x, z: phys.z, yaw: phys.yaw, v: phys.v, len: car.tpl.size.z, half: car.tpl.size.x / 2 });
   // regard (repère voiture)
   camera.getWorldPosition(tmpV); camera.getWorldQuaternion(tmpQ);

@@ -142,7 +142,7 @@ export class Cockpit {
     // La vitre étant très inclinée, le plan est étiré en hauteur pour que le texte paraisse droit.
     const tilt = Math.atan2(0.84, 0.40);          // ≈ 64° : normale de la vitre vers le conducteur
     const m = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075 / Math.cos(tilt - 0.06)), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false }));
-    m.position.set(EYE.x, 1.153, 0.795); m.rotation.set(-tilt, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
+    m.position.set(EYE.x, 1.147, 0.79); m.rotation.set(tilt, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
     this.root.add(m); this.hudMesh = m;
   }
   drawHUD(st) {

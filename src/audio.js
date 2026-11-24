@@ -25,6 +25,15 @@ export class Audio {
     for (const fr of [415, 520]) { const o = C.createOscillator(); o.type = 'square'; o.frequency.value = fr; const hf = C.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 900; o.connect(hf); hf.connect(this.horn); o.start(); }
     this.horn.connect(this.master);
   }
+  // pluie : bruit blanc filtré (crépitement)
+  startRain() {
+    if (!this.ctx || this.rainStarted) return; this.rainStarted = true; const C = this.ctx;
+    const rb = C.createBuffer(1, C.sampleRate * 2, C.sampleRate), rd = rb.getChannelData(0);
+    for (let i = 0; i < rd.length; i++) rd[i] = (Math.random() * 2 - 1) * (Math.random() < 0.02 ? 1 : 0.35);
+    const rs = C.createBufferSource(); rs.buffer = rb; rs.loop = true;
+    const rf = C.createBiquadFilter(); rf.type = 'bandpass'; rf.frequency.value = 2400; rf.Q.value = 0.5;
+    const rg = C.createGain(); rg.gain.value = 0.11; rs.connect(rf); rf.connect(rg); rg.connect(this.master); rs.start();
+  }
   update(rpm, kmh, throttle, hornOn) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
