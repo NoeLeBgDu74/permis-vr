@@ -154,7 +154,7 @@ export class Cockpit {
     // rapport (gauche) + clignotants
     g.textAlign = 'center'; txt(st.gear, 120, 82, '800 64px Inter, Arial', '#f2fdff', 10);
     if (st.blink && st.blinkPhase) txt(st.blink === 'L' ? '◀' : '▶', st.blink === 'L' ? 40 : 200, 82, '800 50px Inter, Arial', '#28e070', 8);
-    if (st.handbrake) txt('(P) FREIN', 120, 18, '800 24px Inter, Arial', '#ff4040', 6);
+    if (st.handbrake) { g.textAlign = 'left'; txt(st.pc ? '(P) FREIN À MAIN — touche X (ou accélère)' : '(P) FREIN À MAIN', 10, 16, '800 24px Inter, Arial', '#ff4040', 6); g.textAlign = 'center'; }
     // limitation (droite)
     if (st.limit) {
       g.beginPath(); g.arc(560, 80, 62, 0, 7); g.fillStyle = 'rgba(255,255,255,.95)'; g.fill(); g.lineWidth = 14; g.strokeStyle = '#e0142c'; g.stroke();

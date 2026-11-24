@@ -172,6 +172,8 @@ function loop() {
   if (inp.events.has('gear')) setGear(phys.gear === 'R' ? 'D' : 'R');
   if (inp.events.has('gearN')) setGear('N');
   if (inp.events.has('handbrake')) { phys.handbrake = !phys.handbrake; audio.click(false); }
+  // frein à main électrique : se desserre tout seul quand on accélère en D ou R
+  if (phys.handbrake && (phys.gear === 'D' || phys.gear === 'R') && inp.throttle > 0.3) { phys.handbrake = false; audio.click(true); }
   // accélérer en P : passe tout seul en D (boîte automatique)
   if (phys.gear === 'P' && inp.throttle > 0.3 && !G.leverHeld) { phys.gear = 'D'; audio.click(true); }
   if (inp.events.has('park') && kmh < 2) { phys.gear = 'P'; audio.click(true); }
@@ -296,7 +298,7 @@ function loop() {
   G.clT -= dt; G.scrT -= dt;
   if (G.clT <= 0) {
     G.clT = 0.1;
-    const cst = { handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase };
+    const cst = { pc: !xr, handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase };
     cockpit.drawCluster(cst); cockpit.drawHUD(cst);
   }
   if (G.scrT <= 0) {
