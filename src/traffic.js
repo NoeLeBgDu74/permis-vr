@@ -286,6 +286,41 @@ export class Traffic {
     }
     this.pedSrc = srcs;
     this.pedTimer = 0;
+    // promeneurs sur les trottoirs (tour d'îlot), replacés près du joueur quand ils s'éloignent
+    this.walkers = [];
+    if (srcs.length) for (let k = 0; k < 12; k++) {
+      const src = srcs[k % srcs.length];
+      const obj = SkeletonUtils.clone(src.g.scene); obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+      const mixer = new THREE.AnimationMixer(obj); const act = mixer.clipAction(src.walk); act.play(); act.time = Math.random() * 2;
+      const w = { obj, mixer, v: 1.1 + Math.random() * 0.45, dir: Math.random() < 0.5 ? 1 : -1, t: 0, b: null, onRoad: false };
+      this.scene.add(obj); this.walkers.push(w);
+    }
+  }
+  // place un promeneur sur un îlot proche du joueur
+  placeWalker(w, P) {
+    const SWm = 1.9;
+    const blocks = this.city.blocks.filter(b => { const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2; return Math.hypot(cx - P.x, cz - P.z) < 160 && !this.city.nearRound(b.x0, b.z0, b.x1, b.z1, 2); });
+    if (!blocks.length) return;
+    const b = blocks[Math.floor(Math.random() * blocks.length)];
+    w.b = { x0: b.x0 + SWm, x1: b.x1 - SWm, z0: b.z0 + SWm, z1: b.z1 - SWm };
+    w.L = 2 * ((w.b.x1 - w.b.x0) + (w.b.z1 - w.b.z0)); w.t = Math.random() * w.L;
+  }
+  walkerPos(w) {
+    const b = w.b, W = b.x1 - b.x0, H = b.z1 - b.z0; let t = ((w.t % w.L) + w.L) % w.L;
+    if (t < W) return [b.x0 + t, b.z0, 1, 0]; t -= W;
+    if (t < H) return [b.x1, b.z0 + t, 0, 1]; t -= H;
+    if (t < W) return [b.x1 - t, b.z1, -1, 0]; t -= W;
+    return [b.x0, b.z1 - t, 0, -1];
+  }
+  updateWalkers(dt, P) {
+    for (const w of this.walkers || []) {
+      if (!w.b || Math.hypot(w.x - P.x, w.z - P.z) > 190) { this.placeWalker(w, P); if (!w.b) continue; }
+      w.t += w.dir * w.v * dt;
+      const [x, z, dx, dz] = this.walkerPos(w);
+      w.x = x; w.z = z;
+      w.obj.position.set(x, 0.14, z); w.obj.rotation.y = Math.atan2(dx * w.dir, dz * w.dir);
+      if (Math.hypot(x - P.x, z - P.z) < 70) w.mixer.update(dt * w.v / 1.3);
+    }
   }
   spawnPed(cr) {
     if (!this.pedSrc.length) return;
@@ -324,6 +359,7 @@ export class Traffic {
   }
   updatePeds(dt, bodies) {
     const P = this.player;
+    if (P) this.updateWalkers(dt, P);
     // apparitions près du joueur
     this.pedTimer -= dt;
     if (P && this.pedTimer <= 0 && this.peds.length < 7 && this.pedSrc && this.pedSrc.length) {

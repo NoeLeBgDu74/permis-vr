@@ -40,6 +40,38 @@ export class Input {
     for (const [k, ev] of [['a', 'blinkL'], ['e', 'blinkR'], ['r', 'gear'], ['n', 'gearN'], ['p', 'park'], ['x', 'handbrake'], ['g', 'wipers'], ['l', 'lights'], ['1', 'ans1'], ['2', 'ans2'], ['3', 'ans3'], ['&', 'ans1'], ['é', 'ans2'], ['"', 'ans3'], ['h', 'horn'], ['c', 'cam'], ['enter', 'restart'], ['escape', 'menu'], ['v', 'recenter'], ['f', 'free']]) if (this.take(k)) st.events.add(ev);
     st.hornHeld = this.keys.has('h');
     st.talk = this.keys.has('t');
+    // manette de jeu (Xbox / PlayStation / standard) sur PC
+    st.pad = false;
+    const pads = (navigator.getGamepads && !xrInputs) ? navigator.getGamepads() : [];
+    for (const gp of pads || []) {
+      if (!gp || !gp.connected || gp.mapping !== 'standard') continue;
+      st.pad = true; this.pad = gp;
+      const b = gp.buttons, ax = gp.axes, val = (i) => b[i] ? b[i].value : 0, down = (i) => b[i] && b[i].pressed;
+      const prev = this.padPrev || {}, edge = (i) => down(i) && !prev[i];
+      const dz = (v) => Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88;
+      st.throttle = Math.max(st.throttle, val(7)); st.brake = Math.max(st.brake, val(6));
+      const lx = dz(ax[0] || 0); if (lx) st.steer = -Math.sign(lx) * Math.pow(Math.abs(lx), 1.4);
+      // joystick droit : regarder autour (revient doucement au centre)
+      const rx = dz(ax[2] || 0), ry = dz(ax[3] || 0);
+      if (rx || ry) { this.look.yaw = Math.max(-2.4, Math.min(2.4, this.look.yaw - rx * dt * 2.6)); this.look.pitch = Math.max(-1, Math.min(0.8, this.look.pitch - ry * dt * 1.8)); }
+      else { this.look.yaw *= Math.max(0, 1 - dt * 2.5); this.look.pitch *= Math.max(0, 1 - dt * 2.5); }
+      if (edge(0)) st.events.add('gear');        // A
+      st.hornHeld = st.hornHeld || down(1);       // B
+      if (edge(1)) st.events.add('horn');
+      if (edge(2)) st.events.add('handbrake');   // X
+      if (down(3)) st.talk = true;                // Y maintenu : parler
+      if (edge(4)) st.events.add('blinkL');      // LB
+      if (edge(5)) st.events.add('blinkR');      // RB
+      if (edge(8)) st.events.add('cam');         // Vue / Select
+      if (edge(9)) st.events.add('restart');     // Menu / Start
+      if (edge(12)) st.events.add('gearN');      // croix haut
+      if (edge(13)) st.events.add('park');       // croix bas
+      if (edge(14)) st.events.add('wipers');     // croix gauche
+      if (edge(15)) st.events.add('lights');     // croix droite
+      if (edge(11)) st.events.add('recenter');   // clic joystick droit
+      const np = {}; for (let i = 0; i < b.length; i++) np[i] = down(i); this.padPrev = np;
+      break;
+    }
     // manettes VR
     if (xrInputs) for (const src of xrInputs) {
       const gp = src.gamepad; if (!gp) continue;
@@ -66,5 +98,9 @@ export class Input {
       st.hands[hand === 'left' ? 0 : 1] = { grip: down(1), handed: hand };
     }
     return st;
+  }
+  rumble(strong, ms = 200) {
+    const gp = this.pad; const a = gp && gp.vibrationActuator;
+    if (a && a.playEffect) a.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: Math.min(1, strong + 0.2) }).catch(() => { });
   }
 }

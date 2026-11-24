@@ -125,6 +125,15 @@ async function startGame(mode) {
   // rig de tête : caméra + manettes, à la place conducteur
   const rig = new THREE.Group(); rig.position.copy(LAY.eye); car.obj.add(rig);
   rig.add(camera); camera.position.set(0, 0, 0); camera.rotation.set(0, Math.PI, 0);
+  // vignette de confort (VR) : assombrit la vision périphérique quand le véhicule tourne
+  if (!game || !game.vignette) {
+    const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+    const gr = g.createRadialGradient(128, 128, 40, 128, 128, 128); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.55, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+    const vt = new THREE.CanvasTexture(c);
+    var vignette = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.62), new THREE.MeshBasicMaterial({ map: vt, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+    vignette.position.z = -0.2; vignette.renderOrder = 999; camera.add(vignette);
+  }
   const hands = [];
   const factory = new XRControllerModelFactory();
   for (let i = 0; i < 2; i++) {
@@ -138,7 +147,7 @@ async function startGame(mode) {
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
   const exam = new Exam({ city, traffic, hw: world.hw, rainy: world.rainy, vclass, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
   voice.persona = exam.mood.persona; voice.rate = exam.mood.rate; voice.history = [];
-  game = { vclass, LAY, mode, car, phys, cockpit, interior, inspector, windshield, headlights, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  game = { vignette: game && game.vignette || vignette, vclass, LAY, mode, car, phys, cockpit, interior, inspector, windshield, headlights, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.onFinish = (r) => { r.first = mode === 'exam' && saveExam(r); if (r.first) { audio.beep('ok'); exam.speak(`Et voilà : vous avez votre permis ${r.vclass} ! Félicitations !`); } showResultCard(r); };
   exam.begin();
   const old = document.getElementById('resultCard'); if (old) old.remove();
@@ -191,6 +200,7 @@ function makeSchoolSign(car) {
   return s;
 }
 
+function comfortOn() { const el = $('comfort'); return !el || el.checked; }
 // vibration d'une manette (0 = gauche, 1 = droite)
 function pulse(k, intensity, ms) {
   const s = renderer.xr.getSession(); if (!s) return;
@@ -226,13 +236,13 @@ function loop() {
   // pendant les questions de vérification : 1/2/3 (PC) ou X / Y / A (manettes)
   if (exam.state === 'quiz') {
     const map = [['ans1', 0], ['ans2', 1], ['ans3', 2]];
-    if (xr) map.push(['blinkL', 0], ['blinkR', 1], ['gear', 2]);
+    if (xr || inp.pad) map.push(['blinkL', 0], ['blinkR', 1], ['gear', 2]);
     for (const [ev, i] of map) if (inp.events.has(ev)) { inp.events.delete(ev); exam.answer(i); break; }
-    if (xr) { inp.events.delete('blinkL'); inp.events.delete('blinkR'); inp.events.delete('gear'); }
+    if (xr || inp.pad) { inp.events.delete('blinkL'); inp.events.delete('blinkR'); inp.events.delete('gear'); }
   }
   const kmh = Math.abs(phys.v) * 3.6;
-  if (exam.state === 'done' && exam.mode === 'exam' && (inp.events.has('restart') || (xr && inp.events.has('gear')))) { startGame('exam'); return; }
-  if (exam.state === 'done' && (inp.events.has('free') || (xr && inp.events.has('horn')))) { startGame('free'); return; }
+  if (exam.state === 'done' && exam.mode === 'exam' && (inp.events.has('restart') || ((xr || inp.pad) && inp.events.has('gear')))) { startGame('exam'); return; }
+  if (exam.state === 'done' && (inp.events.has('free') || ((xr || inp.pad) && inp.events.has('horn')))) { startGame('free'); return; }
   if (inp.events.has('restart') && exam.mode === 'free') { startGame('free'); return; }
   if (inp.events.has('menu')) { location.href = location.pathname; return; }
   const setGear = (g) => { if (g === phys.gear) return; if (g === 'P' && kmh > 2) return; if ((g === 'R' && phys.v > 1.5) || (g === 'D' && phys.v < -1.5)) return; phys.gear = g; audio.click(true); pulse(0, 0.5, 30); pulse(1, 0.5, 30); };
@@ -318,6 +328,7 @@ function loop() {
   const prevX = phys.x, prevZ = phys.z, prevYaw = phys.yaw;
   phys.step(dt, { throttle: inp.throttle, brake: inp.brake, wheel });
   phys.brakeLight = inp.brake > 0.1 || phys.gear === 'P';
+  if (G.vignette) { const yr = Math.abs(phys.yaw - prevYaw) / Math.max(dt, 1e-3); const want = xr && comfortOn() ? THREE.MathUtils.clamp((yr - 0.15) * 0.9, 0, 0.85) : 0; G.vignette.material.opacity += (want - G.vignette.material.opacity) * Math.min(1, dt * 6); G.vignette.visible = G.vignette.material.opacity > 0.01; }
   collide(G, prevX, prevZ, prevYaw);
   // clignotants : tic-tac + annulation automatique au retour du volant
   if (G.blink) {
@@ -423,7 +434,7 @@ function collide(G, px, pz, pyaw) {
   }
   if (hit) {
     phys.x = px; phys.z = pz; phys.yaw = pyaw;
-    if (Math.abs(phys.v) > 1.5 && t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+    if (Math.abs(phys.v) > 1.5 && t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); input.rumble(1, 500); }
     phys.v = 0;
     return;
   }
@@ -436,7 +447,7 @@ function collide(G, px, pz, pyaw) {
   }
   if (curb) {
     phys.v *= 0.96;
-    if (Math.abs(phys.v) > 0.8 && t - G.curbT > 6) { G.curbT = t; exam.fault('curb'); }
+    if (Math.abs(phys.v) > 0.8 && t - G.curbT > 6) { G.curbT = t; exam.fault('curb'); input.rumble(0.5, 250); }
   }
   // autres voitures
   const c = Math.cos(phys.yaw), s = Math.sin(phys.yaw);
@@ -450,7 +461,7 @@ function collide(G, px, pz, pyaw) {
     if (Math.abs(lx) < hx + ahx - 0.15 && Math.abs(lz) < hz + ahz - 0.2) {
       phys.x = px; phys.z = pz; phys.yaw = pyaw;
       if (a.fou && !(Math.abs(phys.v) > 3 && lz > 0)) { if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.reactT = -99; exam.react('victim'); } phys.v = 0; a.v = 0; return; }
-      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); input.rumble(1, 500); }
       phys.v = 0; a.v = 0;
       return;
     }
@@ -461,7 +472,7 @@ function collide(G, px, pz, pyaw) {
     const lx = rx * c - rz * s, lz = rx * s + rz * c;
     if (Math.abs(lx) < hx + a.half - 0.15 && Math.abs(lz) < hz + a.len / 2 - 0.2) {
       phys.x = px; phys.z = pz; phys.yaw = pyaw;
-      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); input.rumble(1, 500); }
       phys.v = 0; a.v = Math.min(a.v, 3);
       return;
     }
@@ -481,12 +492,13 @@ function collide(G, px, pz, pyaw) {
       return;
     }
   }
-  for (const p of world.traffic.peds) {
+  for (const p of [...world.traffic.peds, ...(world.traffic.walkers || [])]) {
+    if (p.x === undefined) continue;
     const rx = p.x - phys.x, rz = p.z - phys.z;
     const lx = rx * c - rz * s, lz = rx * s + rz * c;
     if (Math.abs(lx) < hx + 0.3 && Math.abs(lz) < hz + 0.3 && Math.abs(phys.v) > 0.5) {
       phys.v = 0; phys.x = px; phys.z = pz;
-      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); }
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep('crash'); exam.fault('crash'); input.rumble(1, 500); }
     }
   }
 }
