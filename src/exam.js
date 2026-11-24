@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { N, RW, LO, SP, RO, RC, nodeX, DIRS, dirOf, dirKey, turnOf, turnDir } from './city.js';
 import { roundClear } from './traffic.js';
+import { MOODS, randomMood, pick } from './moods.js';
 
 const FAULTS = {
   blink: { label: 'Clignotant non utilisé avant de tourner', pts: 1 },
@@ -33,7 +34,8 @@ const ROUND_TXT = { right: 'prenez la première sortie', straight: 'prenez la de
 const turnText = (n, t) => (n && n.type === 'round' ? ROUND_TXT : TURN_TXT)[t];
 
 export class Exam {
-  constructor({ city, traffic, audio, mode }) {
+  constructor({ city, traffic, audio, mode, mood }) {
+    this.moodKey = mood && MOODS[mood] ? mood : randomMood(); this.mood = MOODS[this.moodKey]; this.chatT = 25 + Math.random() * 20;
     this.city = city; this.traffic = traffic; this.audio = audio; this.mode = mode; // 'exam' | 'free'
     this.faults = []; this.cool = {}; this.t = 0;
     this.state = 'start';      // start → drive → park → done
@@ -49,7 +51,7 @@ export class Exam {
   speak(text, voice = true) { this.say = text; this.sayT = this.t; if (voice) this.audio.say(text); }
 
   begin() {
-    if (this.mode === 'exam') this.speak('Bonjour, je suis votre inspecteur. Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
+    if (this.mode === 'exam') this.speak(pick(this.mood.hello) + ' Passez en D, desserrez le frein à main, mettez le clignotant gauche, contrôlez votre rétroviseur et votre angle mort, puis démarrez doucement.');
     else this.speak('Conduite libre : roulez où vous voulez. Je vous signale les erreurs pour vous entraîner.');
   }
 
@@ -58,6 +60,12 @@ export class Exam {
     const F = FAULTS[key];
     if (this.cool[key] && this.t - this.cool[key] < 8) return;
     this.cool[key] = this.t;
+    // humeur : un inspecteur fatigué ou distrait peut ne pas voir un oubli de contrôle ; un inspecteur indulgent accorde parfois une faute légère
+    if (!F.elim && ['mirror', 'blind', 'blinkStart', 'blink', 'blinkExit'].includes(key) && Math.random() < this.mood.blindSpot) return;
+    if (!F.elim && this.mode === 'exam' && Math.random() < this.mood.forgive && this.mood.forgiveLines.length) {
+      this.faults.push({ key, label: F.label + extra + ' — accordée', pts: 0, elim: false, t: this.t, forgiven: true });
+      this.audio.beep('warn'); this.speak(F.label + '. ' + pick(this.mood.forgiveLines)); return;
+    }
     const f = { key, label: F.label + extra, pts: F.pts || 0, elim: !!F.elim, t: this.t };
     this.faults.push(f);
     this.audio.beep(f.elim ? 'elim' : 'warn');
@@ -75,7 +83,7 @@ export class Exam {
     this.state = 'done';
     const lines = this.faults.length ? this.faults.map(f => (f.elim ? '⛔ ' : '• ') + f.label + (f.pts ? ` (−${f.pts})` : '')) : ['Aucune faute, conduite exemplaire !'];
     this.result = { ok, note: `Note : ${note} / 31${elim ? ' — faute éliminatoire' : ''}`, lines, hint: 'A / Entrée : recommencer   ·   B / F : conduite libre' };
-    if (!elim) this.speak(ok ? `Félicitations, vous avez obtenu ${note} sur 31. Vous êtes reçu !` : `Vous avez ${note} sur 31. C'est insuffisant, il faut au moins 20. Ce sera pour la prochaine fois.`);
+    if (!elim) this.speak(ok ? `Vous avez obtenu ${note} sur 31. ${this.mood.pass}` : `Vous avez ${note} sur 31, il faut au moins 20. ${this.mood.fail}`);
     this.audio.beep(ok ? 'ok' : 'elim');
   }
 
@@ -95,6 +103,11 @@ export class Exam {
   update(dt, car, ctl, blink) {
     this.t += dt;
     if (blink) this.blinkSeen[blink] = this.t;
+    // bavardage selon l'humeur (seulement quand tout est calme)
+    if (this.mood.chat && this.state === 'drive' && this.mood.chatLines.length) {
+      this.chatT -= dt;
+      if (this.chatT <= 0 && this.t - this.sayT > 12 && (!this.approach || this.approach.dist > 60)) { this.chatT = this.mood.chat * (0.7 + Math.random() * 0.6); this.speak(pick(this.mood.chatLines)); }
+    }
     if (this.state === 'done') return;
     const kmh = Math.abs(car.v) * 3.6;
     const f = car.forward();
@@ -173,7 +186,7 @@ export class Exam {
       }
       // regards avant de tourner : mémorisés tant qu'on approche
       // manque d'allure
-      if (this.mode === 'exam' && this.state === 'drive' && kmh < 15 && toLine > 25 && limit >= 50 && !this.traffic.cars.some(a => Math.hypot(a.x - car.x, a.z - car.z) < 18)) { this.slowT += dt; if (this.slowT > 12) { this.fault('slow'); this.slowT = 0; } } else this.slowT = 0;
+      if (this.mode === 'exam' && this.state === 'drive' && kmh < 15 && toLine > 25 && limit >= 50 && !this.traffic.cars.some(a => Math.hypot(a.x - car.x, a.z - car.z) < 18)) { this.slowT += dt; if (this.slowT > this.mood.slowAfter) { this.fault('slow'); this.slowT = 0; } } else this.slowT = 0;
     }
 
     // ---- entrée / sortie de carrefour ----
@@ -214,7 +227,7 @@ export class Exam {
     // ---- vitesse ----
     this.limit = limit;
     if (kmh > limit + 25) this.fault('bigspeed', ` (${Math.round(kmh)} km/h pour ${limit})`);
-    else if (kmh > limit + 4) { this.overT += dt; if (this.overT > 1.5) this.fault('speed', ` (${Math.round(kmh)} km/h pour ${limit})`); } else this.overT = 0;
+    else if (kmh > limit + this.mood.speedTol) { this.overT += dt; if (this.overT > 1.5) this.fault('speed', ` (${Math.round(kmh)} km/h pour ${limit})`); } else this.overT = 0;
     // freinage brusque (sans danger devant)
     if (ctl.brake > 0.95 && kmh > 35 && car.accel < -7 && !this.dangerAhead(car)) this.fault('brake');
 
@@ -323,7 +336,7 @@ export class Exam {
 
   // informations affichées sur l'écran central
   screenInfo(car) {
-    const title = this.mode === 'exam' ? `Examen du permis — manœuvres ${Math.min(this.maneuvers, this.target)}/${this.target}` : 'Conduite libre';
+    const title = (this.mode === 'exam' ? `Examen — manœuvres ${Math.min(this.maneuvers, this.target)}/${this.target}` : 'Conduite libre') + `  ·  inspecteur ${this.mood.emoji} ${this.mood.label}`;
     const pen = this.faults.reduce((s, f) => s + f.pts, 0);
     const info = { title, timer: this.mode === 'exam' ? `${31 - pen}/31` : '', faults: this.faults, say: this.t - this.sayT < 9 ? this.say : '' };
     if (this.result) { info.result = this.result; return info; }

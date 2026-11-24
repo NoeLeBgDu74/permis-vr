@@ -119,7 +119,8 @@ async function startGame(mode) {
   }
   if (!traffic.cars.length) await traffic.init(world.quality === 'medium' ? 14 : 20, { x: phys.x, z: phys.z });
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
-  const exam = new Exam({ city, traffic, audio, mode });
+  const exam = new Exam({ city, traffic, audio, mode, mood: $('mood') ? $('mood').value : 'random' });
+  voice.persona = exam.mood.persona; voice.rate = exam.mood.rate; voice.history = [];
   game = { mode, car, phys, cockpit, interior, inspector, windshield, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.begin();
 }

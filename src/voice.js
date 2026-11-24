@@ -65,7 +65,7 @@ export class Voice {
         end: () => { finished = true; if (!last) { this.jobs.delete(id); resolve(); } },
         fail: () => { this.jobs.delete(id); reject(new Error('tts')); },
       });
-      this.worker.postMessage({ type: 'speak', id, text });
+      this.worker.postMessage({ type: 'speak', id, text, rate: this.rate || 1 });
     });
   }
   async speakNow(text, gen) {
@@ -80,7 +80,7 @@ export class Voice {
       if (!('speechSynthesis' in window)) return res();
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'fr-FR'; u.rate = 1.0; u.pitch = 0.92;
+      u.lang = 'fr-FR'; u.rate = this.rate || 1.0; u.pitch = 0.92;
       const v = speechSynthesis.getVoices().find(x => x.name === this.voiceName); if (v) u.voice = v;
       let done = false; const fin = () => { if (!done) { done = true; clearInterval(iv); res(); } };
       u.onend = u.onerror = fin; speechSynthesis.speak(u);
@@ -147,7 +147,7 @@ export class Voice {
   // ---------- cerveau de l'inspecteur ----------
   async answer(userText, ctx) {
     this.busy = true; this.status = '💭';
-    const sys = `Tu es Monsieur Bernard, inspecteur du permis de conduire français, assis à la place passager pendant l'épreuve pratique (ou une leçon de conduite libre). ` +
+    const sys = `${this.persona || ''} Tu es Monsieur Bernard, inspecteur du permis de conduire français, assis à la place passager pendant l'épreuve pratique (ou une leçon de conduite libre). ` +
       `Tu es calme, poli, un peu pince-sans-rire mais bienveillant. Tu vouvoies le candidat. Réponds en français parlé, 1 à 3 phrases courtes (c'est lu à voix haute, pas de liste, pas d'émoji, pas de markdown). ` +
       `Tu peux expliquer le code de la route, rassurer, répondre aux questions sur l'examen, rappeler la consigne en cours. Tu ne donnes jamais la note avant la fin. ` +
       `La voiture est une citadine à boîte AUTOMATIQUE (sélecteur P, R, N, D ; pas d'embrayage ni de première). Commandes du candidat en VR : gâchette droite = accélérer, gâchette gauche = freiner, saisir le volant avec les gâchettes latérales, X/Y = clignotants gauche/droit, A = marche avant/arrière, B = klaxon. Sur PC : Z accélérer, S freiner, Q/D tourner, A/E clignotants, R marche avant/arrière, P parking. ` +

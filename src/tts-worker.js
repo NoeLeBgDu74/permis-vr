@@ -56,7 +56,7 @@ async function phonemize(text) {
   });
 }
 
-async function speak(id, text) {
+async function speak(id, text, rate = 1) {
   await init();
   // phrase par phrase : la première est jouée pendant que les suivantes se calculent
   const parts = text.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]*/g) || [text];
@@ -66,7 +66,7 @@ async function speak(id, text) {
     const feeds = {
       input: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
       input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(ids.length)]), [1]),
-      scales: new ort.Tensor('float32', Float32Array.from([cfg.inference.noise_scale, 1.0, cfg.inference.noise_w]), [3]),
+      scales: new ort.Tensor('float32', Float32Array.from([cfg.inference.noise_scale, 1 / rate, cfg.inference.noise_w]), [3]),
     };
     if (cfg.speaker_id_map && 'pierre' in cfg.speaker_id_map) feeds.sid = new ort.Tensor('int64', BigInt64Array.from([BigInt(cfg.speaker_id_map.pierre)]), [1]);
     const out = await session.run(feeds);
@@ -79,5 +79,5 @@ async function speak(id, text) {
 onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init') init();
-  else if (m.type === 'speak') speak(m.id, m.text).catch(err => postMessage({ type: 'error', id: m.id, message: String(err && err.message || err) }));
+  else if (m.type === 'speak') speak(m.id, m.text, m.rate || 1).catch(err => postMessage({ type: 'error', id: m.id, message: String(err && err.message || err) }));
 };
