@@ -2,7 +2,7 @@
 // gardent leurs distances (IDM) ; piétons qui traversent aux passages cloutés.
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { N, SP, RW, LO, nodeX, DIRS, dirOf, turnOf, turnDir } from './city.js';
+import { N, SP, RW, LO, RO, RI, RC, radOf, nodeX, DIRS, dirOf, turnOf, turnDir } from './city.js';
 import { loadCarTemplate, makeCar, poseCar, carLOD, MODELS, PAINTS } from './car.js';
 import { glb } from './assets.js';
 
@@ -10,7 +10,7 @@ const rightOf = (d) => ({ x: -d.dz, z: d.dx });
 function rand(a, b) { return a + Math.random() * (b - a); }
 
 export class Traffic {
-  constructor(scene, city) { this.scene = scene; this.city = city; this.cars = []; this.peds = []; this.player = null; }
+  constructor(scene, city) { this.scene = scene; this.city = city; this.cars = []; this.peds = []; this.parked = []; this.player = null; }
 
   async init(count, avoid) {
     const ids = ['milano95', 'sigil07', 'asti89', 'fairheaven80', 'ace11'];
@@ -22,7 +22,7 @@ export class Traffic {
       const i = Math.floor(Math.random() * N), j = Math.floor(Math.random() * N);
       const from = this.city.node(i, j), to = this.city.node(i + axisDir.dx, j + axisDir.dz);
       if (!from || !to) continue;
-      const s = rand(8, SP - 2 * RW - 20);
+      const s = rand(8, SP - 2 * RO - 4);
       const key = from.i + ',' + from.j + axisDir.k;
       if (taken.some(t => t.key === key && Math.abs(t.s - s) < 14)) continue;
       const tpl = tpls[Math.floor(Math.random() * tpls.length)];
@@ -34,10 +34,19 @@ export class Traffic {
       taken.push({ key, s });
       this.scene.add(car.obj); this.cars.push(a);
     }
+    // voitures garées (rue du créneau + parking du supermarché), immobiles
+    for (const sp of [...(this.city.parkedSpots || []), ...(this.city.decorCars || [])]) {
+      const tpl = tpls[Math.floor(Math.random() * tpls.length)];
+      const car = makeCar(tpl, PAINTS[Math.floor(Math.random() * PAINTS.length)]);
+      const y = (this.city.parkedSpots || []).includes(sp) ? 0 : 0.152;
+      car.obj.position.set(sp.x, y, sp.z); car.obj.rotation.y = sp.yaw; poseCar(car, {});
+      this.scene.add(car.obj);
+      this.parked.push({ x: sp.x, z: sp.z, yaw: sp.yaw, v: 0, len: tpl.size.z, half: tpl.size.x / 2, car, street: y === 0 });
+    }
     await this.initPeds();
   }
 
-  segLen() { return SP - 2 * RW; }
+  segLen(a) { return SP - radOf(a.from) - radOf(this.toNode(a)); }
   toNode(a) { const d = dirOf(a.d); return this.city.node(a.from.i + d.dx, a.from.j + d.dz); }
   planNext(a) {
     const B = this.toNode(a);
@@ -50,10 +59,24 @@ export class Traffic {
   // point de voie (droite) à la distance s depuis la sortie du nœud `from`
   lanePoint(n, dk, s) {
     const d = dirOf(dk), r = rightOf(d);
-    return { x: n.x + d.dx * (RW + s) + r.x * LO, z: n.z + d.dz * (RW + s) + r.z * LO };
+    const R0 = radOf(n);
+    return { x: n.x + d.dx * (R0 + s) + r.x * LO, z: n.z + d.dz * (R0 + s) + r.z * LO };
   }
   buildTurn(a) {
     const B = this.toNode(a), d = dirOf(a.d), r = rightOf(d), d2 = dirOf(a.nd), r2 = rightOf(d2);
+    if (B.type === 'round') { // anneau parcouru dans le sens antihoraire (îlot à gauche)
+      const k = Math.sqrt(RC * RC - LO * LO);
+      const q0 = { x: B.x - d.dx * RO + r.x * LO, z: B.z - d.dz * RO + r.z * LO };
+      const pin = { x: B.x + r.x * LO - d.dx * k, z: B.z + r.z * LO - d.dz * k };
+      const pout = { x: B.x + r2.x * LO + d2.dx * k, z: B.z + r2.z * LO + d2.dz * k };
+      const q2 = { x: B.x + d2.dx * RO + r2.x * LO, z: B.z + d2.dz * RO + r2.z * LO };
+      const t1 = Math.atan2(pin.z - B.z, pin.x - B.x); let t2 = Math.atan2(pout.z - B.z, pout.x - B.x);
+      while (t2 > t1 - 0.3) t2 -= Math.PI * 2;
+      const pts = [q0]; for (let t = t1; t > t2; t -= 0.14) pts.push({ x: B.x + Math.cos(t) * RC, z: B.z + Math.sin(t) * RC });
+      pts.push({ x: B.x + Math.cos(t2) * RC, z: B.z + Math.sin(t2) * RC }, q2);
+      let L = 0; pts[0].L = 0; for (let i = 1; i < pts.length; i++) { L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z); pts[i].L = L; }
+      a.turnPts = pts; a.turnLen = L; a.node = B; return;
+    }
     const p0 = { x: B.x - d.dx * RW + r.x * LO, z: B.z - d.dz * RW + r.z * LO };
     const p2 = { x: B.x + d2.dx * RW + r2.x * LO, z: B.z + d2.dz * RW + r2.z * LO };
     let c;
@@ -119,16 +142,16 @@ export class Traffic {
     for (const a of this.cars) {
       const lim = a.phase === 'seg' ? city.limitOf(dirOf(a.d).dx ? 'x' : 'z', dirOf(a.d).dx ? a.from.j : a.from.i, dirOf(a.d).dx ? Math.min(a.from.i, a.from.i + dirOf(a.d).dx) : Math.min(a.from.j, a.from.j + dirOf(a.d).dz)) : 30;
       let v0 = lim / 3.6 * a.pace;
-      if (a.phase === 'turn') v0 = a.turn === 'straight' ? 9 : 5.2;
+      if (a.phase === 'turn') v0 = a.node && a.node.type === 'round' ? 7 : a.turn === 'straight' ? 9 : 5.2;
       // approche du carrefour avec pré-ralentissement si on tourne
       let stopGap = Infinity;
       a.waiting = false;
       if (a.phase === 'seg') {
-        const L = this.segLen(), B = this.toNode(a);
+        const L = this.segLen(a), B = this.toNode(a);
         const remain = L - a.s;
-        if (a.turn !== 'straight' && remain < 30) v0 = Math.min(v0, 5.2 + remain * 0.25);
+        if ((a.turn !== 'straight' || B.type === 'round') && remain < 30) v0 = Math.min(v0, (B.type === 'round' ? 6.5 : 5.2) + remain * 0.25);
         const axis = dirOf(a.d).dx ? 'x' : 'z';
-        const sd = city.stopDist(B, a.d) - RW; // ligne d'arrêt à `sd` avant la fin du segment
+        const sd = city.stopDist(B, a.d) - radOf(B); // ligne d'arrêt à `sd` avant la fin du segment
         const toLine = remain - sd;
         // piétons sur le passage d'approche ou de sortie
         if (this.pedBlocking(B, a.d, a.nd)) stopGap = Math.min(stopGap, Math.max(0.1, toLine - 0.3));
@@ -147,8 +170,10 @@ export class Traffic {
             if (toLine < 12) go = this.clearFor(a, B, axis, 'minor', bodies);
           } else if (ctl === 'right') {
             if (toLine < 14) go = this.clearFor(a, B, axis, 'right', bodies);
+          } else if (ctl === 'round') {
+            if (toLine < 14) go = this.clearRound(a, B, bodies) || a.wait > 9;
           }
-          if (go && toLine < 10 && this.boxBusy(B, bodies, a) && ctl !== 'major') go = false;
+          if (go && toLine < 10 && ctl !== 'major' && ctl !== 'round' && this.boxBusy(B, bodies, a)) go = false;
           if (go && toLine < 8) a.cleared = true;
           if (!go) { stopGap = Math.min(stopGap, Math.max(0.1, toLine - 0.3)); a.wait += dt; a.waiting = toLine < 9; }
         }
@@ -183,20 +208,27 @@ export class Traffic {
       a.s += a.v * dt;
       a.braking = acc < -0.6 || a.v < 0.1;
       // transitions
-      if (a.phase === 'seg' && a.s >= this.segLen()) {
-        a.s -= this.segLen(); a.phase = 'turn'; this.buildTurn(a);
+      if (a.phase === 'seg' && a.s >= this.segLen(a)) {
+        a.s -= this.segLen(a); a.phase = 'turn'; this.buildTurn(a);
       } else if (a.phase === 'turn' && a.s >= a.turnLen) {
         a.s -= a.turnLen; a.from = a.node; a.d = a.nd; a.phase = 'seg'; this.planNext(a);
       }
       this.place(a);
       a.spin += a.v / 0.31 * dt;
-      const blinking = a.turn !== 'straight' && (a.phase === 'turn' || this.segLen() - a.s < 35);
+      const isRound = a.phase === 'turn' ? a.node && a.node.type === 'round' : this.toNode(a).type === 'round';
+      const blinking = isRound ? (a.phase === 'turn' && a.s > a.turnLen - 14) : a.turn !== 'straight' && (a.phase === 'turn' || this.segLen(a) - a.s < 35);
       poseCar(a.car, { spin: a.spin, steer: a.phase === 'turn' && a.turn !== 'straight' ? (a.turn === 'left' ? 0.45 : -0.45) : 0, brake: a.braking, blink: blinking && (performance.now() % 760 < 380) ? 4 : 0 });
       if (playerBody) carLOD(a.car, Math.hypot(a.x - playerBody.x, a.z - playerBody.z));
     }
     this.updatePeds(dt, bodies);
   }
 
+  // rond-point : céder aux véhicules déjà dans l'anneau qui arrivent par la gauche (en amont)
+  clearRound(a, B, bodies) {
+    const d = dirOf(a.d), r = rightOf(d), k = Math.sqrt(RC * RC - LO * LO);
+    const thIn = Math.atan2(B.z + r.z * LO - d.dz * k - B.z, B.x + r.x * LO - d.dx * k - B.x);
+    return roundClear(B, thIn, bodies, a);
+  }
   // Peut-on s'engager ? mode 'minor' : céder à tout trafic transversal ; 'right' : céder à droite seulement
   clearFor(a, B, axis, mode, bodies) {
     const d = dirOf(a.d);
@@ -292,4 +324,16 @@ export class Traffic {
     for (const p of this.peds) if (p.dead) this.scene.remove(p.obj);
     this.peds = this.peds.filter(p => !p.dead);
   }
+}
+
+// aucun véhicule de l'anneau n'arrive (en amont, angle croissant) vers l'angle d'entrée thIn ?
+export function roundClear(B, thIn, bodies, self) {
+  for (const b of bodies) {
+    if (self && b.ai === self) continue;
+    const rx = b.x - B.x, rz = b.z - B.z, rr = Math.hypot(rx, rz);
+    if (rr < RI || rr > RO + 0.3) continue;
+    let dth = Math.atan2(rz, rx) - thIn; dth = ((dth % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (dth < 1.5 && (Math.abs(b.v) > 0.8 || dth < 0.55)) return false;
+  }
+  return true;
 }

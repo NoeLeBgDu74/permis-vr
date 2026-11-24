@@ -222,7 +222,7 @@ function loop() {
   audio.update(phys.rpm, kmh, inp.throttle, inp.hornHeld);
 
   // ----- caméra PC -----
-  if (!xr) {
+  if (!xr && G.cam !== 'debug') {
     if (G.cam === 'in') {
       G.rig.position.copy(EYE); G.rig.rotation.set(0, 0, 0);
       camera.position.set(0, 0, 0); camera.rotation.set(input.look.pitch, Math.PI + input.look.yaw, 0, 'YXZ');
@@ -299,6 +299,21 @@ function collide(G, px, pz, pyaw) {
       return;
     }
   }
+  for (const a of world.traffic.parked) {
+    if (!a.street) continue;
+    const rx = a.x - phys.x, rz = a.z - phys.z;
+    if (rx * rx + rz * rz > 64) continue;
+    const lx = rx * c - rz * s, lz = rx * s + rz * c;
+    const dyaw = Math.abs(Math.sin(a.yaw - phys.yaw));
+    const ahx = a.half * (1 - dyaw) + a.len / 2 * dyaw, ahz = a.len / 2 * (1 - dyaw) + a.half * dyaw;
+    if (Math.abs(lx) < hx + ahx - 0.12 && Math.abs(lz) < hz + ahz - 0.12) {
+      const slow = Math.abs(phys.v) < 3;
+      phys.x = px; phys.z = pz; phys.yaw = pyaw;
+      if (t - G.crashT > 3) { G.crashT = t; audio.beep(slow ? 'warn' : 'crash'); exam.fault(slow ? 'touch' : 'crash'); }
+      phys.v = 0;
+      return;
+    }
+  }
   for (const p of world.traffic.peds) {
     const rx = p.x - phys.x, rz = p.z - phys.z;
     const lx = rx * c - rz * s, lz = rx * s + rz * c;
@@ -318,4 +333,5 @@ setInterval(() => { if (!renderer.xr.isPresenting && (canvas.width === 0 || Math
 
 // lancement direct pour les tests : ?play=exam|free
 if (params.get('play')) launch(params.get('play'), false);
+window.__look = (x, y, z, tx, ty, tz) => { const G = game; G.cam = 'debug'; scene.attach(G.rig); G.rig.position.set(x, y, z); G.rig.rotation.set(0, 0, 0); camera.position.set(0, 0, 0); camera.lookAt(tx, ty, tz); };
 window.__pvr = () => ({ game, world, THREE, camera, renderer, voice });

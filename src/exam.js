@@ -1,6 +1,7 @@
 // Examen du permis : itinéraire guidé par l'inspecteur, contrôle des règles, fautes et note sur 31.
 import * as THREE from 'three';
-import { N, RW, LO, SP, nodeX, DIRS, dirOf, dirKey, turnOf, turnDir } from './city.js';
+import { N, RW, LO, SP, RO, RC, nodeX, DIRS, dirOf, dirKey, turnOf, turnDir } from './city.js';
+import { roundClear } from './traffic.js';
 
 const FAULTS = {
   blink: { label: 'Clignotant non utilisé avant de tourner', pts: 1 },
@@ -12,6 +13,10 @@ const FAULTS = {
   curb: { label: 'Montée sur le trottoir', pts: 2 },
   orange: { label: 'Feu orange franchi', pts: 1 },
   park: { label: 'Arrêt final loin du trottoir', pts: 1 },
+  blinkExit: { label: 'Clignotant droit oublié en sortie de rond-point', pts: 1 },
+  creneau: { label: 'Créneau raté', pts: 2 },
+  creneauAvant: { label: 'Créneau fait en marche avant', pts: 1 },
+  touch: { label: 'Contact avec un véhicule en stationnement', pts: 2 },
   brake: { label: 'Freinage brusque', pts: 1 },
   slow: { label: 'Manque d\'allure', pts: 1 },
   // éliminatoires
@@ -24,6 +29,8 @@ const FAULTS = {
   bigspeed: { label: 'Grand excès de vitesse', elim: true },
 };
 const TURN_TXT = { left: 'tournez à gauche', right: 'tournez à droite', straight: 'continuez tout droit' };
+const ROUND_TXT = { right: 'prenez la première sortie', straight: 'prenez la deuxième sortie', left: 'prenez la troisième sortie' };
+const turnText = (n, t) => (n && n.type === 'round' ? ROUND_TXT : TURN_TXT)[t];
 
 export class Exam {
   constructor({ city, traffic, audio, mode }) {
@@ -31,7 +38,7 @@ export class Exam {
     this.faults = []; this.cool = {}; this.t = 0;
     this.state = 'start';      // start → drive → park → done
     this.say = ''; this.sayT = 0;
-    this.instr = null; this.maneuvers = 0; this.target = mode === 'exam' ? 9 : Infinity;
+    this.instr = null; this.maneuvers = 0; this.target = mode === 'exam' ? 7 : Infinity;
     this.prevLoc = null; this.approach = null; this.inNode = null;
     this.look = { center: -99, left: -99, right: -99, shoulderL: -99, shoulderR: -99 };
     this.blinkSeen = { L: -99, R: -99 };
@@ -144,6 +151,12 @@ export class Exam {
         // priorités
         if (ctl === 'stop' || ctl === 'yield') { if (this.conflict(B, loc.axis, dk, 'minor')) this.fault('priority'); }
         else if (ctl === 'right') { if (this.conflict(B, loc.axis, dk, 'right')) this.fault('priority'); }
+        else if (ctl === 'round') {
+          const d = dirOf(dk), k = Math.sqrt(RC * RC - LO * LO), rx = -d.dz, rz = d.dx;
+          const thIn = Math.atan2(rz * LO - d.dz * k, rx * LO - d.dx * k);
+          const bodies = this.traffic.cars.map(a => ({ x: a.x, z: a.z, v: a.v }));
+          if (!roundClear(B, thIn, bodies, null)) this.fault('priority');
+        }
       }
       if (this.city.controlFor(B, loc.axis) === 'light') {
         const st = this.city.lightState(B, loc.axis);
@@ -151,12 +164,12 @@ export class Exam {
         if (st !== 'O') ap.orangeFrom = undefined;
       }
       // instruction à donner
-      if (this.mode === 'exam' && this.state === 'drive' && (!this.instr || this.instr.n !== B || this.instr.dk !== dk)) this.plan(B, dk);
-      if (this.instr && !this.instr.said && distC < 75 && this.state === 'drive') {
+      if (this.mode === 'exam' && (this.state === 'drive' || this.state === 'nav') && (!this.instr || this.instr.n !== B || this.instr.dk !== dk)) this.plan(B, dk);
+      if (this.instr && !this.instr.said && distC < 75 && (this.state === 'drive' || this.state === 'nav')) {
         this.instr.said = true;
         const ctl = this.city.controlFor(B, loc.axis);
-        const where = ctl === 'light' ? 'Au feu' : ctl === 'stop' ? 'Au stop' : ctl === 'yield' ? 'Au cédez-le-passage' : 'Au prochain carrefour';
-        this.speak(`${where}, ${TURN_TXT[this.instr.turn]}.`);
+        const where = ctl === 'round' ? 'Au rond-point' : ctl === 'light' ? 'Au feu' : ctl === 'stop' ? 'Au stop' : ctl === 'yield' ? 'Au cédez-le-passage' : 'Au prochain carrefour';
+        this.speak(`${where}, ${turnText(B, this.instr.turn)}.`);
       }
       // regards avant de tourner : mémorisés tant qu'on approche
       // manque d'allure
@@ -173,18 +186,26 @@ export class Exam {
         const sgn = Math.sign(loc.axis === 'x' ? f.x : f.z) || 1;
         const exit = dirKey(loc.axis, sgn);
         const turn = turnOf(nd.from, exit);
-        if (turn === 'left' || turn === 'right') {
+        if (nd.n.type === 'round') {
+          if (this.t - this.blinkSeen.R > 8) this.fault('blinkExit');
+        } else if (turn === 'left' || turn === 'right') {
           const side = turn === 'left' ? 'L' : 'R';
           if (this.t - this.blinkSeen[side] > 9) this.fault('blink');
           const looked = Math.max(this.look.center, turn === 'left' ? this.look.left : this.look.right);
           if (this.t - looked > 12) this.fault('mirror');
         }
-        if (this.mode === 'exam' && this.instr && this.instr.n === nd.n && this.state === 'drive') {
+        if (this.mode === 'exam' && this.instr && this.instr.n === nd.n && (this.state === 'drive' || this.state === 'nav')) {
           if (turn === this.instr.turn) {
             this.maneuvers++;
-            if (this.maneuvers >= this.target) { this.state = 'park'; this.speak('Parfait. Garez-vous à droite le long du trottoir dès que possible, puis passez en P.'); }
+            if (this.state === 'drive' && this.maneuvers >= this.target) { this.state = 'nav'; this.speak('Très bien. Nous allons terminer par un créneau. Suivez mes indications.'); }
           } else if (turn !== 'uturn') this.speak('Ce n\'est pas grave, on continue par là.');
           this.instr = null;
+        }
+        // arrivée dans la rue du créneau (sens est)
+        const cr = this.city.creneau;
+        if (this.mode === 'exam' && this.state === 'nav' && loc.type === 'seg' && loc.axis === 'x' && loc.line === cr.line && loc.a === cr.a && sgn > 0) {
+          this.state = 'creneau'; this.crT = 0; this.usedReverse = false;
+          this.speak('Sur votre droite, il y a une place libre entre deux voitures. Garez-vous en créneau, en marche arrière, puis passez en P.');
         }
       }
       this.inNode = null;
@@ -208,12 +229,57 @@ export class Exam {
       }
     }
 
-    // ---- stationnement final ----
-    if (this.state === 'park' && kmh < 0.5 && (car.gear === 'P' || this.parkT > 3)) {
-      if (loc.type === 'seg' && this.rightOff > RW - 1.6) { this.speak('Arrêt correct. Coupez le moteur, l\'examen est terminé.', false); this.finish(); }
-      else if (loc.type === 'seg' && car.gear === 'P') { this.fault('park'); this.finish(); }
+    // ---- sens de rotation dans le rond-point ----
+    if (loc.type === 'node' && loc.n.type === 'round' && kmh > 4) {
+      const px = car.x - loc.n.x, pz = car.z - loc.n.z, r = Math.hypot(px, pz) || 1;
+      if ((f.x * pz - f.z * px) / r < -0.3) { this.wrongRound = (this.wrongRound || 0) + dt; if (this.wrongRound > 1.2) this.fault('wrongway'); } else this.wrongRound = 0;
     }
-    if (this.state === 'park' && kmh < 0.5) this.parkT = (this.parkT || 0) + dt; else this.parkT = 0;
+
+    // ---- créneau ----
+    const inSlot = this.inSlot(car);
+    if (this.state === 'creneau') {
+      this.crT += dt;
+      if (car.gear === 'R' && car.v < -0.3) this.usedReverse = true;
+      if (kmh < 0.3) this.stopT = (this.stopT || 0) + dt; else this.stopT = 0;
+      if (this.stopT > 1.2 && (car.gear === 'P' || this.stopT > 4)) {
+        const cr = this.city.creneau, sl = cr.target;
+        if (inSlot) {
+          if (!this.usedReverse) this.fault('creneauAvant');
+          this.speak('Créneau réussi, bien joué. L\'examen est terminé.', false); this.finish();
+        } else if (car.gear === 'P' && car.x > sl.x0 - 4 && car.x < sl.x1 + 4 && car.z > cr.z0 - 3) { this.fault('creneau'); this.finish(); }
+      }
+      if (this.crT > 150) { this.fault('creneau'); this.finish(); }
+    } else if (this.mode === 'free' && inSlot && kmh < 0.3) {
+      this.freeSlotT = (this.freeSlotT || 0) + dt;
+      if (this.freeSlotT > 1.5 && !this.freeSlotDone) { this.freeSlotDone = true; this.speak('Joli créneau ! Vous êtes parfaitement garé.'); this.audio.beep('ok'); }
+    } else { this.freeSlotT = 0; if (!inSlot) this.freeSlotDone = false; }
+  }
+
+  // la voiture est-elle entièrement dans la place libre, alignée, face à l'est ?
+  inSlot(car) {
+    const cr = this.city.creneau, sl = cr.target;
+    if (Math.abs(Math.cos(car.yaw)) > 0.2 || Math.sin(car.yaw) < 0) return false;
+    for (const [x, z] of car.corners()) if (x < sl.x0 + 0.05 || x > sl.x1 - 0.05 || z < cr.z0 - 0.65 || z > cr.z1 + 0.05) return false;
+    return true;
+  }
+
+  // itinéraire le plus court (en carrefours) jusqu'au début de la rue du créneau : renvoie le virage à faire en B
+  routeTurn(B, dk) {
+    const cr = this.city.creneau, T = this.city.node(cr.a, cr.line);
+    const key = (n, d) => n.i + ',' + n.j + d;
+    const q = [{ n: B, d: dk, first: null }], seen = new Set([key(B, dk)]);
+    while (q.length) {
+      const st = q.shift();
+      for (const t of ['straight', 'right', 'left']) {
+        const nd = turnDir(st.d, t), D = dirOf(nd);
+        const nn = this.city.node(st.n.i + D.dx, st.n.j + D.dz); if (!nn) continue;
+        const first = st.first || t;
+        if (st.n === T && nd === cr.dir) return first;
+        const k = key(nn, nd); if (seen.has(k)) continue; seen.add(k);
+        q.push({ n: nn, d: nd, first });
+      }
+    }
+    return null;
   }
 
   dangerAhead(car) {
@@ -242,6 +308,7 @@ export class Exam {
   }
 
   plan(B, dk) {
+    if (this.state === 'nav') { const t = this.routeTurn(B, dk); if (t) { this.instr = { n: B, dk, turn: t, said: false }; return; } }
     const opts = [];
     for (const t of ['left', 'right', 'straight']) {
       const nd = dirOf(turnDir(dk, t)); const nn = this.city.node(B.i + nd.dx, B.j + nd.dz);
@@ -261,8 +328,8 @@ export class Exam {
     const info = { title, timer: this.mode === 'exam' ? `${31 - pen}/31` : '', faults: this.faults, say: this.t - this.sayT < 9 ? this.say : '' };
     if (this.result) { info.result = this.result; return info; }
     if (this.state === 'start' && this.mode === 'exam') info.instruction = { turn: 'go', text: 'Démarrez : D, clignotant gauche, angle mort' };
-    else if (this.state === 'park') info.instruction = { turn: 'park', text: 'Garez-vous à droite, puis P' };
-    else if (this.instr && this.approach) info.instruction = { turn: this.instr.turn, text: TURN_TXT[this.instr.turn].replace(/^./, c => c.toUpperCase()), dist: Math.max(0, Math.round(this.approach.dist - RW)) + ' m' };
+    else if (this.state === 'creneau') info.instruction = { turn: 'park', text: 'Créneau à droite, en marche arrière' };
+    else if (this.instr && this.approach) info.instruction = { turn: this.instr.turn, text: turnText(this.instr.n, this.instr.turn).replace(/^./, c => c.toUpperCase()), dist: Math.max(0, Math.round(this.approach.dist - RW)) + ' m' };
     return info;
   }
 }
