@@ -134,30 +134,32 @@ export class Cockpit {
 
   // ---------- affichage tête haute (bas du pare-brise, face au conducteur) ----------
   buildHUD() {
-    const c = document.createElement('canvas'); c.width = 512; c.height = 200;
+    const c = document.createElement('canvas'); c.width = 640; c.height = 160;
     this.hud = c; this.hudG = c.getContext('2d');
     this.hudTex = new THREE.CanvasTexture(c); this.hudTex.colorSpace = THREE.SRGBColorSpace;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.133), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, toneMapped: false, depthWrite: false }));
-    m.position.set(EYE.x, 1.135, 0.8); m.rotation.set(-0.06, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
+    // bandeau plat posé au pied du pare-brise, entièrement au-dessus de la jante du volant (≈ 1 à 5° sous l'horizon)
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.125), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, toneMapped: false, depthWrite: false, depthTest: false }));
+    m.position.set(EYE.x, 1.16, 0.95); m.rotation.set(-0.03, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
     this.root.add(m); this.hudMesh = m;
   }
   drawHUD(st) {
-    const g = this.hudG, W = 512, H = 200;
+    const g = this.hudG, W = 640, H = 160;
     g.clearRect(0, 0, W, H);
     const over = st.limit && st.kmh > st.limit + 2;
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = '800 132px Inter, Arial'; g.lineJoin = 'round';
-    g.lineWidth = 14; g.strokeStyle = 'rgba(0,10,20,.75)'; g.strokeText(String(Math.round(st.kmh)), 250, 96);
-    g.shadowColor = over ? '#ff2a2a' : '#7fe3ff'; g.shadowBlur = 10;
-    g.fillStyle = over ? '#ff5050' : '#f2fdff'; g.fillText(String(Math.round(st.kmh)), 250, 96);
-    g.shadowBlur = 0; g.font = '700 26px Inter, Arial'; g.lineWidth = 6; g.strokeText('km/h', 250, 176); g.fillStyle = over ? '#ff8080' : '#bfeaf8'; g.fillText('km/h', 250, 176);
-    if (st.limit) { // panneau de limitation
-      g.beginPath(); g.arc(430, 92, 52, 0, 7); g.fillStyle = 'rgba(255,255,255,.92)'; g.fill(); g.lineWidth = 12; g.strokeStyle = '#e0142c'; g.stroke();
-      g.fillStyle = '#111'; g.font = '800 46px Inter, Arial'; g.fillText(String(st.limit), 430, 95);
+    const txt = (t, x, y, font, col, lw = 8) => { g.font = font; g.lineJoin = 'round'; g.lineWidth = lw; g.strokeStyle = 'rgba(0,10,20,.8)'; g.strokeText(t, x, y); g.fillStyle = col; g.fillText(t, x, y); };
+    g.textBaseline = 'middle';
+    // vitesse (centre) + km/h
+    g.textAlign = 'right'; txt(String(Math.round(st.kmh)), 360, 82, '800 120px Inter, Arial', over ? '#ff5050' : '#f2fdff', 14);
+    g.textAlign = 'left'; txt('km/h', 372, 110, '700 30px Inter, Arial', over ? '#ff8080' : '#bfeaf8', 6);
+    // rapport (gauche) + clignotants
+    g.textAlign = 'center'; txt(st.gear, 120, 82, '800 64px Inter, Arial', '#f2fdff', 10);
+    if (st.blink && st.blinkPhase) txt(st.blink === 'L' ? '◀' : '▶', st.blink === 'L' ? 40 : 200, 82, '800 50px Inter, Arial', '#28e070', 8);
+    if (st.handbrake) txt('(P) FREIN', 120, 18, '800 24px Inter, Arial', '#ff4040', 6);
+    // limitation (droite)
+    if (st.limit) {
+      g.beginPath(); g.arc(560, 80, 62, 0, 7); g.fillStyle = 'rgba(255,255,255,.95)'; g.fill(); g.lineWidth = 14; g.strokeStyle = '#e0142c'; g.stroke();
+      g.fillStyle = '#111'; g.font = '800 54px Inter, Arial'; g.textAlign = 'center'; g.fillText(String(st.limit), 560, 84);
     }
-    g.font = '800 44px Inter, Arial'; g.lineWidth = 8; g.strokeText(st.gear, 70, 96); g.fillStyle = '#f2fdff'; g.fillText(st.gear, 70, 96);
-    if (st.blink && st.blinkPhase) { g.fillStyle = '#28e070'; g.font = '800 40px Inter, Arial'; g.fillText(st.blink === 'L' ? '◀' : '▶', st.blink === 'L' ? 70 : 140, 160); }
-    if (st.handbrake) { g.fillStyle = '#ff4040'; g.font = '800 22px Inter, Arial'; g.fillText('(P) FREIN', 80, 30); }
     this.hudTex.needsUpdate = true;
   }
 
