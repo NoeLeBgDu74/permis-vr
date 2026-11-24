@@ -47,7 +47,7 @@ export class Cockpit {
     const g = new THREE.Group(); g.add(bezel); m.position.z = -0.0105; m.rotation.y = Math.PI; g.add(m);
     // posé sur le haut de la planche de bord, au centre, orienté vers le conducteur
     g.position.set(...this.L.screen.pos); g.rotation.set(this.L.screen.rot[0], this.L.screen.rot[1], 0, 'YXZ'); // tourné vers le conducteur, incliné vers ses yeux
-    this.root.add(g); this.screen = g;
+    (this.L.screen.onBar && this.car.steeringWheel ? this.car.steeringWheel : this.root).add(g); this.screen = g;
   }
   drawScreen(info) {
     const g = this.scrG, W = 1024, H = 600;
@@ -197,7 +197,7 @@ export class Cockpit {
       const frame = new THREE.Mesh(roundedPlane(w + 0.016, h + 0.016, h * 0.45), new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.5 }));
       const g = new THREE.Group(); g.position.copy(pos); g.rotation.copy(rot);
       mesh.rotation.y = Math.PI; frame.rotation.y = Math.PI; frame.position.z = 0.004; g.add(frame, mesh);
-      this.root.add(g);
+      (this.L.mirrorsOnBar && this.car.steeringWheel ? this.car.steeringWheel : this.root).add(g);
       const cam = new THREE.PerspectiveCamera(fov, w / h, 0.3, 600);
       cam.rotation.set(0, camYaw, 0); g.add(cam);
       // la caméra est au centre du miroir, regardant vers l'arrière de la voiture (axe -z du groupe tourné)
@@ -210,7 +210,7 @@ export class Cockpit {
     for (const [name, w, h, p, r, cy, fov, res, shape] of this.L.mirrors) mk(name, w, h, new THREE.Vector3(...p), new THREE.Euler(r[0], r[1], 0, 'YXZ'), cy, fov, res, shape);
   }
   // direction (repère voiture) du centre d'un miroir, pour vérifier les regards
-  mirrorLocal(name) { const m = this.mirrors.find(x => x.name === name); return m ? m.group.position : null; }
+  mirrorLocal(name) { const m = this.mirrors.find(x => x.name === name); if (!m) return null; return this.root.worldToLocal(m.group.getWorldPosition(new THREE.Vector3())); }
 
   renderMirrors(scene, frame) {
     const r = this.renderer;

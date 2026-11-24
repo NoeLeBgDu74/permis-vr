@@ -342,13 +342,14 @@ function mergeTwo(a, b) {
 export function buildMoto() {
   const layout = {
     eye: new THREE.Vector3(0, 1.5, -0.12),
-    screen: { pos: [0, 1.17, 0.5], rot: [0.75, 0], scale: 0.62 },
+    screen: { pos: [0, 0.15, 0.012], rot: [0.75, 0], scale: 0.62, onBar: true },
     cluster: null,
     hud: { pos: [0, 1.33, 0.62], tilt: 0, w: 0.34, h: 0.085 },
     mirrors: [
-      ['left', 0.13, 0.09, [0.33, 1.3, 0.5], [0, 0.18], -0.32, 34, [240, 170], 'round'],
-      ['right', 0.13, 0.09, [-0.33, 1.3, 0.5], [0, -0.18], 0.32, 34, [240, 170], 'round'],
+      ['left', 0.13, 0.085, [0.33, 0.28, -0.021], [0, 0.04], -0.22, 34, [240, 160], 'round'],
+      ['right', 0.13, 0.085, [-0.33, 0.28, -0.021], [0, -0.04], 0.22, 34, [240, 160], 'round'],
     ],
+    mirrorsOnBar: true,
     windshield: null, passenger: null, wheelMax: 0.55,
   };
   const spec = { accelK: 1.45, vmax: 50, ratio: 1, wheelMax: 0.55, brakeK: 1.05 };
