@@ -33,7 +33,7 @@ export function pbr(name, { scale = 2, color = 0xffffff, normalScale = 1, roughn
   if (matCache.has(key)) return matCache.get(key);
   const base = 'assets/tex/' + name + '/';
   const rep = new THREE.Vector2(1 / scale, 1 / scale);
-  const clone = (t) => { const c = t.clone(); c.repeat.copy(rep); c.needsUpdate = true; return c; };
+  const clone = (t) => { const c = t.clone(); c.repeat.copy(rep); if (t.image) c.needsUpdate = true; return c; };
   const m = new THREE.MeshStandardMaterial({
     color, map: clone(tex(base + 'diff.webp', true)), normalMap: clone(tex(base + 'nor.webp')),
     roughnessMap: clone(tex(base + 'arm.webp')), metalnessMap: null, aoMap: clone(tex(base + 'arm.webp')),

@@ -6,6 +6,7 @@ import { setupEnv } from './env.js';
 import { loadCarTemplate, makeCar, Physics, carLOD } from './car.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { buildInterior } from './interior.js';
+import { loadInspector } from './inspector.js';
 import { Traffic } from './traffic.js';
 import { Exam } from './exam.js';
 import { Input } from './input.js';
@@ -90,6 +91,7 @@ async function startGame(mode) {
   phys.x = nodeX(1) + RW + 28; phys.z = nodeX(2) + (RW - 1.05); phys.yaw = Math.PI / 2; phys.gear = 'P';
   phys.apply();
   const interior = buildInterior(car); car.steeringWheel = interior.wheelPivot;
+  const inspector = await loadInspector(car).catch(e => { console.warn(e); return null; });
   const cockpit = new Cockpit(car, renderer, world.quality);
   // plaque « auto-école » sur le toit
   car.obj.add(makeSchoolSign(car));
@@ -108,7 +110,7 @@ async function startGame(mode) {
   if (!traffic.cars.length) await traffic.init(world.quality === 'medium' ? 14 : 20, { x: phys.x, z: phys.z });
   else for (const a of traffic.cars) if (Math.hypot(a.x - phys.x, a.z - phys.z) < 30) { a.s = Math.max(0, a.s - 40); }
   const exam = new Exam({ city, traffic, audio, mode });
-  game = { mode, car, phys, cockpit, interior, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
+  game = { mode, car, phys, cockpit, interior, inspector, rig, hands, exam, blink: null, blinkT: 0, blinkPhase: false, blinkPeak: 0, cam: 'in', frame: 0, scrT: 0, clT: 0, crashT: -9, curbT: -9, needRecenter: 0 };
   exam.begin();
 }
 
@@ -204,6 +206,7 @@ function loop() {
   } else G.blinkPhase = false;
   phys.blinkOn = G.blink && G.blinkPhase;
   phys.apply();
+  if (G.inspector) G.inspector.update(dt, { speaking: voice.speaking, turn: exam.instr && exam.approach && exam.approach.dist < 45 && exam.instr.turn !== 'straight' ? exam.instr.turn : null });
   G.interior.update({ brake: inp.brake, throttle: inp.throttle, blink: G.blink, gear: phys.gear });
   car.obj.updateMatrixWorld(true);
 
