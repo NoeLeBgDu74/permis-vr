@@ -215,7 +215,7 @@ export function buildInterior(car) {
     for (const x of [-0.42, 0, 0.42]) mesh(rb(0.34, 0.03, 0.42, 0.012), M.insert, [x, 0.525, -0.95], [-0.08, 0, 0], g);
     const b = mesh(rb(1.3, 0.62, 0.13, 0.05, 4), M.fabric, [0, 0.8, -1.27], [-0.22, 0, 0], g);
     for (const x of [-0.42, 0.42]) mesh(rb(0.25, 0.16, 0.09, 0.04, 4), M.fabric, [x, 0.4, -0.02], null, b);
-    mesh(rb(1.36, 0.03, 0.5, 0.01), M.trim, [0, 1.06, -1.5], null, g);              // plage arrière
+    mesh(rb(1.3, 0.03, 0.42, 0.01), M.trim, [0, 1.06, -1.52], null, g);              // plage arrière
   }
 
   // ---------- contre-portes et habillages latéraux ----------
@@ -235,29 +235,29 @@ export function buildInterior(car) {
     }
     // panneaux latéraux avant (pieds) et arrière (custode)
     mesh(rb(0.05, 0.72, 0.5, 0.02), M.trim, [X, 0.64, 0.83], null, root);
-    mesh(rb(0.06, 1.12, 0.55, 0.03), M.trimLight, [side * 0.7, 0.86, -1.43], null, root);
+    mesh(rb(0.06, 0.8, 0.5, 0.03), M.trimLight, [side * 0.69, 0.7, -1.43], null, root);
     // montants : A (pare-brise), B (milieu), C (arrière)
-    beam([side * 0.655, 1.03, 1.03], [side * 0.6, 1.44, 0.22], 0.085, 0.045, M.trimLight, root);
-    beam([side * 0.69, 1.02, -0.38], [side * 0.68, 1.44, -0.4], 0.11, 0.05, M.trimLight, root);
-    mesh(rb(0.025, 0.06, 0.04, 0.01), M.dash, [side * 0.66, 1.32, -0.37], null, root);            // renvoi de ceinture
-    beam([side * 0.67, 1.04, -1.68], [side * 0.62, 1.43, -1.5], 0.15, 0.05, M.trimLight, root);
+    beam([side * 0.64, 1.03, 1.0], [side * 0.52, 1.41, 0.25], 0.075, 0.04, M.trimLight, root);
+    beam([side * 0.69, 1.02, -0.38], [side * 0.53, 1.4, -0.4], 0.1, 0.045, M.trimLight, root);
+    mesh(rb(0.025, 0.06, 0.04, 0.01), M.dash, [side * 0.57, 1.32, -0.37], null, root);            // renvoi de ceinture
+    beam([side * 0.63, 1.06, -1.6], [side * 0.48, 1.36, -1.42], 0.13, 0.045, M.trimLight, root);
     // rail de pavillon
-    mesh(rb(0.06, 0.05, 1.95, 0.02), M.trimLight, [side * 0.67, 1.42, -0.73], null, root);
+    mesh(rb(0.05, 0.045, 1.55, 0.02), M.trimLight, [side * 0.52, 1.395, -0.62], null, root);
     // poignée de maintien (passager / arrière)
-    if (side < 0) mesh(new THREE.TorusGeometry(0.05, 0.008, 8, 20, Math.PI), M.trim, [side * 0.63, 1.37, 0.05], [0, Math.PI / 2, Math.PI], root);
+    if (side < 0) mesh(new THREE.TorusGeometry(0.05, 0.008, 8, 20, Math.PI), M.trim, [side * 0.53, 1.35, 0.05], [0, Math.PI / 2, Math.PI], root);
   }
 
   // ---------- pavillon ----------
-  mesh(rb(1.42, 0.03, 1.98, 0.012), M.headliner, [0, 1.455, -0.72], null, root);
-  mesh(rb(1.3, 0.05, 0.1, 0.02), M.headliner, [0, 1.435, 0.24], null, root);                     // traverse avant
-  mesh(rb(1.3, 0.06, 0.1, 0.02), M.headliner, [0, 1.41, -1.68], null, root);                    // traverse arrière
+  mesh(rb(1.06, 0.025, 1.65, 0.012), M.headliner, [0, 1.425, -0.62], null, root);
+  mesh(rb(1.0, 0.04, 0.1, 0.02), M.headliner, [0, 1.415, 0.22], null, root);                     // traverse avant
+  mesh(rb(0.95, 0.05, 0.1, 0.02), M.headliner, [0, 1.37, -1.47], null, root);                    // traverse arrière
   for (const side of [1, -1]) {                                                                   // pare-soleil relevés
-    const v = mesh(rb(0.34, 0.018, 0.16, 0.008), M.headliner, [side * 0.33, 1.42, 0.17], [0.08, 0, 0], root);
+    const v = mesh(rb(0.32, 0.018, 0.15, 0.008), M.headliner, [side * 0.3, 1.4, 0.16], [0.08, 0, 0], root);
     mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.3, 8), M.trimLight, [0, 0, 0.075], [0, 0, Math.PI / 2], v);
   }
   // plafonnier + console de pavillon
-  mesh(rb(0.22, 0.03, 0.12, 0.012), M.trimLight, [0, 1.428, 0.05], null, root);
-  mesh(rb(0.08, 0.012, 0.05, 0.005), M.dome, [0, 1.41, 0.05], null, root);
+  mesh(rb(0.22, 0.03, 0.12, 0.012), M.trimLight, [0, 1.405, 0.05], null, root);
+  mesh(rb(0.08, 0.012, 0.05, 0.005), M.dome, [0, 1.388, 0.05], null, root);
   // rétroviseur intérieur : pied
   mesh(rb(0.03, 0.05, 0.03, 0.01), M.dash, [0.02, 1.4, 0.335], null, root);
 

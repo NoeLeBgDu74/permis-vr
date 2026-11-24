@@ -296,7 +296,8 @@ function loop() {
   G.clT -= dt; G.scrT -= dt;
   if (G.clT <= 0) {
     G.clT = 0.1;
-    cockpit.drawCluster({ handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase, warn: G.mode === 'exam' && exam.state === 'drive' ? '' : '' });
+    const cst = { handbrake: phys.handbrake, rpm: phys.rpm, kmh, gear: phys.gear, limit: exam.limit, blink: G.blink, blinkPhase: G.blinkPhase };
+    cockpit.drawCluster(cst); cockpit.drawHUD(cst);
   }
   if (G.scrT <= 0) {
     G.scrT = 0.25;

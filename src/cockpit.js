@@ -16,6 +16,7 @@ export class Cockpit {
     this.buildScreen();
     this.buildCluster();
     this.buildMirrors(quality);
+    this.buildHUD();
   }
 
   // ---------- écran central ----------
@@ -129,6 +130,35 @@ export class Cockpit {
     g.fillStyle = st.blink === 'L' && on ? '#28e070' : '#14201a'; tri(g, 450, 36, -1);
     g.fillStyle = st.blink === 'R' && on ? '#28e070' : '#14201a'; tri(g, 574, 36, 1);
     this.clTex.needsUpdate = true;
+  }
+
+  // ---------- affichage tête haute (bas du pare-brise, face au conducteur) ----------
+  buildHUD() {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 200;
+    this.hud = c; this.hudG = c.getContext('2d');
+    this.hudTex = new THREE.CanvasTexture(c); this.hudTex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.133), new THREE.MeshBasicMaterial({ map: this.hudTex, transparent: true, toneMapped: false, depthWrite: false }));
+    m.position.set(EYE.x, 1.135, 0.8); m.rotation.set(-0.06, Math.PI, 0, 'YXZ'); m.renderOrder = 10;
+    this.root.add(m); this.hudMesh = m;
+  }
+  drawHUD(st) {
+    const g = this.hudG, W = 512, H = 200;
+    g.clearRect(0, 0, W, H);
+    const over = st.limit && st.kmh > st.limit + 2;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '800 132px Inter, Arial'; g.lineJoin = 'round';
+    g.lineWidth = 14; g.strokeStyle = 'rgba(0,10,20,.75)'; g.strokeText(String(Math.round(st.kmh)), 250, 96);
+    g.shadowColor = over ? '#ff2a2a' : '#7fe3ff'; g.shadowBlur = 10;
+    g.fillStyle = over ? '#ff5050' : '#f2fdff'; g.fillText(String(Math.round(st.kmh)), 250, 96);
+    g.shadowBlur = 0; g.font = '700 26px Inter, Arial'; g.lineWidth = 6; g.strokeText('km/h', 250, 176); g.fillStyle = over ? '#ff8080' : '#bfeaf8'; g.fillText('km/h', 250, 176);
+    if (st.limit) { // panneau de limitation
+      g.beginPath(); g.arc(430, 92, 52, 0, 7); g.fillStyle = 'rgba(255,255,255,.92)'; g.fill(); g.lineWidth = 12; g.strokeStyle = '#e0142c'; g.stroke();
+      g.fillStyle = '#111'; g.font = '800 46px Inter, Arial'; g.fillText(String(st.limit), 430, 95);
+    }
+    g.font = '800 44px Inter, Arial'; g.lineWidth = 8; g.strokeText(st.gear, 70, 96); g.fillStyle = '#f2fdff'; g.fillText(st.gear, 70, 96);
+    if (st.blink && st.blinkPhase) { g.fillStyle = '#28e070'; g.font = '800 40px Inter, Arial'; g.fillText(st.blink === 'L' ? '◀' : '▶', st.blink === 'L' ? 70 : 140, 160); }
+    if (st.handbrake) { g.fillStyle = '#ff4040'; g.font = '800 22px Inter, Arial'; g.fillText('(P) FREIN', 80, 30); }
+    this.hudTex.needsUpdate = true;
   }
 
   // ---------- rétroviseurs ----------
