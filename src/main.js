@@ -26,7 +26,7 @@ setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.03, 3000);
 const audio = new Audio();
-const voice = new Voice(); audio.voice = voice;
+const voice = new Voice(); audio.voice = voice; voice.audio = audio;
 const input = new Input(renderer);
 
 let world = null;        // { city, env, traffic, quality }
@@ -47,7 +47,7 @@ $('pcExam').onclick = () => launch('exam', false);
 $('pcFree').onclick = () => launch('free', false);
 
 async function launch(mode, vr) {
-  audio.start();
+  audio.start(); voice.initNeural();
   let session = null;
   if (vr) { // la session doit être demandée directement dans le geste de l'utilisateur
     try {
@@ -242,7 +242,8 @@ function loop() {
   }
   if (G.scrT <= 0) {
     G.scrT = 0.25;
-    const si = exam.screenInfo(phys); if (voice.recording) si.say = '🎙️ Je vous écoute… (relâchez pour envoyer)'; else if (voice.busy) si.say = "… (l'inspecteur réfléchit)"; else if (exam.heard && exam.t - exam.sayT < 9) si.say = 'Vous : ' + exam.heard + ' — ' + si.say;
+    const si = exam.screenInfo(phys); if (voice.recording) si.say = '🎙️ Je vous écoute… (relâchez pour envoyer)'; else if (voice.busy) si.say = "… (l'inspecteur réfléchit)"; else if (voice.neural === 'loading' && exam.t < 120) si.say = (si.say ? si.say + '  —  ' : '') + `Voix de l'inspecteur : téléchargement ${Math.round(voice.neuralP * 100)} %`;
+    else if (exam.heard && exam.t - exam.sayT < 9) si.say = 'Vous : ' + exam.heard + ' — ' + si.say;
     cockpit.drawScreen(si); cockpit.scrTex.needsUpdate = true;
     if (!xr) $('hud').innerHTML = `${Math.round(kmh)} km/h · ${phys.gear} · ${G.blink ? 'clignotant ' + (G.blink === 'L' ? 'gauche' : 'droit') : ''}<br>Clic maintenu : regarder · C : vue extérieure · Échap : menu`;
   }
@@ -317,4 +318,4 @@ setInterval(() => { if (!renderer.xr.isPresenting && (canvas.width === 0 || Math
 
 // lancement direct pour les tests : ?play=exam|free
 if (params.get('play')) launch(params.get('play'), false);
-window.__pvr = () => ({ game, world, THREE, camera, renderer });
+window.__pvr = () => ({ game, world, THREE, camera, renderer, voice });

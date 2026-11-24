@@ -18,39 +18,75 @@ export class Voice {
 
   // ---------- voix ----------
   // file d'attente : une phrase après l'autre ; `priority` coupe ce qui est en cours
+  // une seule voix à la fois : `gen` change à chaque interruption, toute phrase d'une génération dépassée est abandonnée
   say(text, priority = false) {
     if (!text) return;
     if (priority) this.stop();
-    this.queue = this.queue.then(() => this.speakNow(text)).catch(() => { });
+    const g = this.gen || 0;
+    this.queue = this.queue.then(() => (g === (this.gen || 0) ? this.speakNow(text, g) : null)).catch(() => { });
   }
   stop() {
-    if (this.audioEl) { try { this.audioEl.pause(); } catch (e) { } }
+    this.gen = (this.gen || 0) + 1;
+    if (this.current) { const c = this.current; this.current = null; c.stop(); }
     if ('speechSynthesis' in window) speechSynthesis.cancel();
-    this.queue = Promise.resolve();
   }
-  async speakNow(text) {
+  // moteur neuronal local (Piper dans un worker) : téléchargé une fois (~95 Mo) puis en cache
+  initNeural() {
+    if (this.worker) return;
+    try {
+      this.worker = new Worker(new URL('./tts-worker.js', import.meta.url), { type: 'module' });
+      this.neural = 'loading'; this.neuralP = 0; this.jobs = new Map(); this.jid = 0;
+      this.worker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === 'progress') this.neuralP = m.p;
+        else if (m.type === 'ready') this.neural = 'ready';
+        else if (m.type === 'error') { if (m.id !== undefined && this.jobs.has(m.id)) this.jobs.get(m.id).fail(); else this.neural = 'failed'; console.warn('Voix neuronale :', m.message); }
+        else if (m.type === 'audio') { const j = this.jobs.get(m.id); if (j) j.chunk(m.pcm, m.rate); }
+        else if (m.type === 'done') { const j = this.jobs.get(m.id); if (j) j.end(); }
+      };
+      this.worker.postMessage({ type: 'init' });
+    } catch (e) { this.neural = 'failed'; }
+  }
+  neuralSay(text, gen) {
+    const ctx = this.audio && this.audio.ctx;
+    return new Promise((resolve, reject) => {
+      const id = ++this.jid; let t = Math.max(ctx.currentTime + 0.05, 0), finished = false, last = null;
+      const src = [];
+      this.current = { stop: () => { for (const s of src) try { s.stop(); } catch (e) { } this.jobs.delete(id); resolve(); } };
+      this.jobs.set(id, {
+        chunk: (pcm, rate) => {
+          if (gen !== this.gen) return;
+          const buf = ctx.createBuffer(1, pcm.length, rate); buf.copyToChannel(pcm, 0);
+          const s = ctx.createBufferSource(); s.buffer = buf;
+          const g = ctx.createGain(); g.gain.value = 1.6; s.connect(g); g.connect(this.audio.master);
+          t = Math.max(t, ctx.currentTime + 0.03); s.start(t); t += buf.duration + 0.12; src.push(s); last = s;
+          s.onended = () => { if (finished && s === last) { this.jobs.delete(id); resolve(); } };
+        },
+        end: () => { finished = true; if (!last) { this.jobs.delete(id); resolve(); } },
+        fail: () => { this.jobs.delete(id); reject(new Error('tts')); },
+      });
+      this.worker.postMessage({ type: 'speak', id, text });
+    });
+  }
+  async speakNow(text, gen) {
     this.speaking = true;
     try {
-      if (this.caps.tts) {
-        const r = await fetch(RELAY + '/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-        if (r.ok) {
-          const url = URL.createObjectURL(await r.blob());
-          await new Promise(res => { const a = this.audioEl = new Audio(url); a.onended = a.onerror = res; a.play().catch(res); });
-          URL.revokeObjectURL(url); return;
-        }
-        this.caps.tts = false; // voix serveur indisponible : repli sur la voix de l'appareil
-      }
-      await this.browserSay(text);
+      if (this.neural === 'ready' && this.audio && this.audio.ctx) { try { await this.neuralSay(text, gen); return; } catch (e) { } }
+      if (gen === this.gen) await this.browserSay(text, gen);
     } finally { this.speaking = false; }
   }
-  browserSay(text) {
+  browserSay(text, gen) {
     return new Promise(res => {
       if (!('speechSynthesis' in window)) return res();
+      speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'fr-FR'; u.rate = 1.0; u.pitch = 0.92;
       const v = speechSynthesis.getVoices().find(x => x.name === this.voiceName); if (v) u.voice = v;
-      u.onend = u.onerror = res; speechSynthesis.speak(u);
-      setTimeout(res, 400 + text.length * 90);
+      let done = false; const fin = () => { if (!done) { done = true; clearInterval(iv); res(); } };
+      u.onend = u.onerror = fin; speechSynthesis.speak(u);
+      const t0 = performance.now();
+      // filet de sécurité : fin réelle de la parole (certains navigateurs n'émettent pas onend)
+      const iv = setInterval(() => { if (gen !== this.gen || (performance.now() - t0 > 800 && !speechSynthesis.speaking) || performance.now() - t0 > 30000) fin(); }, 200);
     });
   }
 
